@@ -7,19 +7,31 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Building2 } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Building2, AlertCircle, Loader2 } from "lucide-react"
+import { useAuth } from "@/hooks/use-auth"
 
-interface LoginFormProps {
-  onLogin: () => void
-}
-
-export function LoginForm({ onLogin }: LoginFormProps) {
+export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  
+  const { login, isLoading } = useAuth()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    onLogin()
+    setError("")
+
+    if (!email || !password) {
+      setError("Por favor, preencha todos os campos")
+      return
+    }
+
+    const result = await login({ email, password })
+    
+    if (!result.success) {
+      setError(result.error || "Erro ao fazer login")
+    }
   }
 
   return (
@@ -42,6 +54,13 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             <CardDescription>Digite seu email e senha para acessar o sistema</CardDescription>
           </CardHeader>
           <CardContent>
+            {error && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -51,6 +70,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                   placeholder="seu@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  disabled={isLoading}
                   required
                 />
               </div>
@@ -62,13 +82,29 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
                   required
                 />
               </div>
-              <Button type="submit" className="w-full">
-                Entrar
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Entrando...
+                  </>
+                ) : (
+                  "Entrar"
+                )}
               </Button>
             </form>
+            
+            <div className="mt-4 p-3 bg-muted rounded-lg">
+              <p className="text-xs text-muted-foreground text-center">
+                <strong>Credenciais padrão:</strong><br />
+                Email: admin@datahub.com<br />
+                Senha: admin123
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
