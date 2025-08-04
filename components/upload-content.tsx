@@ -1,15 +1,18 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react"
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Database, Settings } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useUpload } from "@/hooks/use-upload"
+import { FileAnalyzer } from "./upload/FileAnalyzer"
+import { DataTypeSelector } from "./upload/DataTypeSelector"
+import { UploadProgress } from "./upload/UploadProgress"
+import { UploadLogs } from "./upload/UploadLogs"
 
 const mockPreviewData = [
   { id: 1, nome: "João Silva", email: "joao@empresa.com", departamento: "Vendas", salario: "R$ 5.000" },
@@ -23,6 +26,18 @@ export function UploadContent() {
   const [showPreview, setShowPreview] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState(false)
+  const [showDataTypeSelector, setShowDataTypeSelector] = useState(false)
+
+  const { 
+    progress, 
+    analysisResult, 
+    logs, 
+    isUploading: isAnalyzing,
+    analyzeFile,
+    confirmWithAdjustments,
+    loadLogs,
+    reset
+  } = useUpload()
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -49,13 +64,36 @@ export function UploadContent() {
     setSelectedFile(null)
     setShowPreview(false)
     setUploadSuccess(false)
+    reset()
+    setShowDataTypeSelector(false)
+  }
+
+  const handleAnalysisComplete = () => {
+    if (analysisResult?.needs_adjustment) {
+      setShowDataTypeSelector(true)
+    }
+  }
+
+  const handleConfirmAdjustments = async (adjustments: any[]) => {
+    if (!selectedFile) return
+    
+    setShowDataTypeSelector(false)
+    await confirmWithAdjustments(adjustments, selectedFile)
+  }
+
+  const handleRefreshLogs = () => {
+    if (analysisResult?.dataset_id) {
+      loadLogs(analysisResult.dataset_id)
+    }
   }
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Upload de Dados</h1>
-        <p className="text-muted-foreground">Importe arquivos CSV e Excel para o sistema</p>
+        <p className="text-muted-foreground">
+          Importe arquivos CSV e Excel com análise automática de tipos de dados
+        </p>
       </div>
 
       {uploadSuccess && (
@@ -67,47 +105,35 @@ export function UploadContent() {
         </Alert>
       )}
 
+      {/* Novo Sistema de Upload Inteligente */}
+      <FileAnalyzer onAnalysisComplete={handleAnalysisComplete} />
+
+      {/* Progress do Upload */}
+      {progress && (
+        <UploadProgress progress={progress} />
+      )}
+
+      {/* Modal de Ajuste de Tipos */}
+      <DataTypeSelector
+        analysisResult={analysisResult}
+        isOpen={showDataTypeSelector}
+        onClose={() => setShowDataTypeSelector(false)}
+        onConfirm={handleConfirmAdjustments}
+        isProcessing={isAnalyzing}
+      />
+
+      {/* Logs do Upload */}
+      {(logs.length > 0 || analysisResult?.dataset_id) && (
+        <UploadLogs
+          datasetId={analysisResult?.dataset_id}
+          logs={logs}
+          onRefresh={handleRefreshLogs}
+          isLoading={isAnalyzing}
+        />
+      )}
+
+      {/* Sistema Antigo - manter apenas como exemplo */}
       <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Upload className="h-5 w-5" />
-              <span>Selecionar Arquivo</span>
-            </CardTitle>
-            <CardDescription>Escolha um arquivo CSV ou Excel para importar</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="file">Arquivo</Label>
-              <Input
-                id="file"
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={handleFileSelect}
-                disabled={isUploading}
-              />
-            </div>
-
-            {selectedFile && (
-              <div className="flex items-center space-x-2 p-3 bg-muted rounded-lg">
-                <FileSpreadsheet className="h-4 w-4 text-blue-600" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{selectedFile.name}</p>
-                  <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB</p>
-                </div>
-              </div>
-            )}
-
-            <div className="flex space-x-2">
-              <Button onClick={handleUpload} disabled={!selectedFile || isUploading} className="flex-1">
-                {isUploading ? "Enviando..." : "Confirmar Upload"}
-              </Button>
-              <Button variant="outline" onClick={resetUpload} disabled={isUploading}>
-                Limpar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
 
         <Card>
           <CardHeader>
@@ -120,24 +146,25 @@ export function UploadContent() {
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Arquivos CSV (.csv)</li>
                 <li>• Excel (.xlsx, .xls)</li>
-                <li>• Tamanho máximo: 10MB</li>
+                <li>• Tamanho máximo: 100MB</li>
               </ul>
             </div>
 
             <div className="space-y-2">
-              <h4 className="text-sm font-medium">Requisitos:</h4>
+              <h4 className="text-sm font-medium">Novo Sistema Inteligente:</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Primeira linha deve conter cabeçalhos</li>
-                <li>• Dados devem estar organizados em colunas</li>
-                <li>• Evite células mescladas</li>
-                <li>• Use codificação UTF-8 para caracteres especiais</li>
+                <li>• Análise automática de tipos de dados</li>
+                <li>• Detecção de textos, números, datas, emails, etc.</li>
+                <li>• Ajuste manual quando necessário</li>
+                <li>• Logs detalhados do processo</li>
+                <li>• Validação de integridade dos dados</li>
               </ul>
             </div>
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                Os dados serão validados antes da importação. Registros com erros serão destacados para correção.
+                Use o sistema inteligente para melhor análise e controle dos seus dados.
               </AlertDescription>
             </Alert>
           </CardContent>
@@ -147,7 +174,7 @@ export function UploadContent() {
       {showPreview && (
         <Card>
           <CardHeader>
-            <CardTitle>Pré-visualização dos Dados</CardTitle>
+            <CardTitle>Pré-visualização dos Dados (Sistema Legado)</CardTitle>
             <CardDescription>Verifique os dados antes de confirmar o upload</CardDescription>
           </CardHeader>
           <CardContent>
@@ -180,6 +207,16 @@ export function UploadContent() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Reset Button */}
+      {(progress || analysisResult || logs.length > 0) && (
+        <div className="flex justify-center pt-4">
+          <Button variant="outline" onClick={resetUpload}>
+            <Settings className="h-4 w-4 mr-2" />
+            Novo Upload
+          </Button>
+        </div>
       )}
     </div>
   )
