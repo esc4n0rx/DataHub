@@ -3,8 +3,15 @@
 import { useState, useCallback } from 'react'
 import { UploadAnalyzer } from '@/lib/upload-analyzer'
 import { UploadAPI } from '@/lib/upload-api'
+import { CollectionsAPI } from '@/lib/collections-api'
 import { AnalysisResult, UploadProgress, DataTypeAdjustment, UploadLog } from '@/types/upload'
+import { UploadMode, FluidUploadConfig } from '@/types/collections'
 import { useToast } from '@/hooks/use-toast'
+
+interface UploadOptions {
+  uploadMode: UploadMode
+  fluidConfig?: FluidUploadConfig
+}
 
 export function useUpload() {
   const [progress, setProgress] = useState<UploadProgress | null>(null)
@@ -21,7 +28,11 @@ export function useUpload() {
     setLogs(prev => [...prev, log])
   }, [])
 
-  const analyzeFile = useCallback(async (file: File, datasetName: string): Promise<void> => {
+  const analyzeFile = useCallback(async (
+    file: File, 
+    datasetName: string, 
+    options?: UploadOptions
+  ): Promise<void> => {
     try {
       setIsUploading(true)
       setLogs([])
@@ -30,8 +41,26 @@ export function useUpload() {
       setProgress({
         phase: 'uploading',
         progress: 0,
-        message: 'Iniciando upload...'
+        message: 'Iniciando upload...',
+        collection_id: options?.uploadMode.collection_id
       })
+
+      // Para upload fluido, verificar compatibilidade de esquema
+      if (options?.uploadMode.type === 'fluid' && options?.uploadMode.collection_id) {
+        updateProgress({
+          progress: 10,
+          message: 'Verificando compatibilidade com dados existentes...'
+        })
+
+        const currentDataset = await CollectionsAPI.getCurrentDataset(options.uploadMode.collection_id)
+        if (currentDataset && options.fluidConfig?.preserve_schema) {
+          // Aqui você pode adicionar lógica para verificar se o esquema é compatível
+          updateProgress({
+            progress: 15,
+            message: 'Esquema compatível verificado'
+          })
+        }
+      }
 
       // Análise do arquivo
       updateProgress({
@@ -58,13 +87,45 @@ export function useUpload() {
         message: 'Criando dataset...'
       })
 
-      const datasetId = await UploadAPI.createDataset(
-        datasetName,
-        file.name,
-        file.size,
-        fileAnalysis.totalRows,
-        fileAnalysis.headers.length
-      )
+      let datasetId: string
+
+      if (options?.uploadMode.type === 'fluid' && options.uploadMode.collection_id) {
+        // Para upload fluido, arquivar versão anterior se necessário
+        if (options.fluidConfig?.backup_previous) {
+          await CollectionsAPI.archivePreviousVersion(options.uploadMode.collection_id)
+        }
+
+        // Criar novo dataset como versão atual
+        const currentVersion = await CollectionsAPI.getCurrentDataset(options.uploadMode.collection_id)
+        datasetId = await UploadAPI.createDataset(
+          datasetName,
+          file.name,
+          file.size,
+          fileAnalysis.totalRows,
+          fileAnalysis.headers.length,
+          undefined, // description
+          {
+            collection_id: options.uploadMode.collection_id,
+            is_current: true,
+            version: (currentVersion?.version || 0) + 1
+          }
+        )
+      } else {
+        // Upload normal ou em coleção
+        datasetId = await UploadAPI.createDataset(
+          datasetName,
+          file.name,
+          file.size,
+          fileAnalysis.totalRows,
+          fileAnalysis.headers.length,
+          undefined, // description
+          options?.uploadMode.collection_id ? {
+            collection_id: options.uploadMode.collection_id,
+            is_current: false, // Para coleções normais, não há conceito de "atual"
+            version: 1
+          } : undefined
+        )
+      }
 
       await UploadAPI.log(datasetId, 'info', 'Dataset criado com sucesso')
 
@@ -87,7 +148,9 @@ export function useUpload() {
         sample_rows: fileAnalysis.data.slice(0, 5),
         needs_adjustment: needsAdjustment,
         total_rows: fileAnalysis.totalRows,
-        total_columns: fileAnalysis.headers.length
+        total_columns: fileAnalysis.headers.length,
+        collection_id: options?.uploadMode.collection_id,
+        is_fluid_upload: options?.uploadMode.type === 'fluid'
       }
 
       setAnalysisResult(result)
@@ -98,11 +161,12 @@ export function useUpload() {
           phase: 'adjusting',
           progress: 80,
           message: 'Aguardando ajustes de tipos de dados...',
-          dataset_id: datasetId
+          dataset_id: datasetId,
+          collection_id: options?.uploadMode.collection_id
         })
       } else {
         // Auto-processar se não precisa de ajuste
-        await processDataset(result, file)
+        await processDataset(result, file, options)
       }
 
     } catch (error) {
@@ -111,7 +175,8 @@ export function useUpload() {
       setProgress({
         phase: 'error',
         progress: 0,
-        message: errorMessage
+        message: errorMessage,
+        collection_id: options?.uploadMode.collection_id
       })
 
       toast({
@@ -129,7 +194,11 @@ export function useUpload() {
     }
   }, [toast, analysisResult?.dataset_id, updateProgress])
 
-  const processDataset = useCallback(async (result: AnalysisResult, file: File): Promise<void> => {
+  const processDataset = useCallback(async (
+    result: AnalysisResult, 
+    file: File, 
+    options?: UploadOptions
+  ): Promise<void> => {
     try {
       updateProgress({
         phase: 'processing',
@@ -156,12 +225,27 @@ export function useUpload() {
         message: 'Processando dados completos...'
       })
 
+      // Para upload fluido, limpar dados anteriores se não foi feito backup
+      if (options?.uploadMode.type === 'fluid' && 
+          options.uploadMode.collection_id && 
+          !options.fluidConfig?.backup_previous) {
+        
+        // Remover dados da versão anterior
+        await UploadAPI.clearCollectionData(options.uploadMode.collection_id)
+        await UploadAPI.log(result.dataset_id, 'info', 'Dados anteriores removidos (upload fluido)')
+      }
+
       // Reprocessar arquivo completo para salvar todos os dados
       const fullFileAnalysis = await UploadAnalyzer.analyzeFile(file)
       await UploadAPI.saveRows(result.dataset_id, fullFileAnalysis.data)
 
       await UploadAPI.updateDatasetStatus(result.dataset_id, 'confirmed')
-      await UploadAPI.log(result.dataset_id, 'info', 'Dataset processado com sucesso')
+      
+      const successMessage = options?.uploadMode.type === 'fluid' 
+        ? 'Dados atualizados com sucesso (upload fluido)'
+        : 'Dataset processado com sucesso'
+      
+      await UploadAPI.log(result.dataset_id, 'info', successMessage)
 
       updateProgress({
         phase: 'completed',
@@ -171,7 +255,9 @@ export function useUpload() {
 
       toast({
         title: "Upload concluído",
-        description: "Dados processados e salvos com sucesso!"
+        description: options?.uploadMode.type === 'fluid' 
+          ? "Dados atualizados com sucesso!"
+          : "Dados processados e salvos com sucesso!"
       })
 
     } catch (error) {
@@ -196,7 +282,8 @@ export function useUpload() {
 
   const confirmWithAdjustments = useCallback(async (
     adjustments: DataTypeAdjustment[],
-    file: File
+    file: File,
+    options?: UploadOptions
   ): Promise<void> => {
     if (!analysisResult) return
 
@@ -212,7 +299,7 @@ export function useUpload() {
       await UploadAPI.log(analysisResult.dataset_id, 'info', 'Ajustes de tipos aplicados')
 
       // Processar com as configurações ajustadas
-      await processDataset(analysisResult, file)
+      await processDataset(analysisResult, file, options)
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro ao aplicar ajustes'

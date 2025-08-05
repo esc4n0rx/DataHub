@@ -2,6 +2,12 @@ import { supabase, setCurrentUser } from './supabase'
 import { Dataset, DatasetColumn, UploadLog, DataType, DataTypeAdjustment } from '@/types/upload'
 import { getStoredAuthData } from './auth'
 
+interface CreateDatasetOptions {
+  collection_id?: string
+  is_current?: boolean
+  version?: number
+}
+
 export class UploadAPI {
   private static async ensureAuth(): Promise<string> {
     const authData = getStoredAuthData()
@@ -20,7 +26,8 @@ export class UploadAPI {
     fileSize: number,
     totalRows: number,
     totalColumns: number,
-    description?: string
+    description?: string,
+    options?: CreateDatasetOptions
   ): Promise<string> {
     const userId = await this.ensureAuth()
 
@@ -34,7 +41,10 @@ export class UploadAPI {
         file_size: fileSize,
         total_rows: totalRows,
         total_columns: totalColumns,
-        status: 'analyzing'
+        status: 'analyzing',
+        collection_id: options?.collection_id || null,
+        is_current: options?.is_current ?? false,
+        version: options?.version ?? 1
       })
       .select('id')
       .single()
@@ -140,6 +150,65 @@ export class UploadAPI {
 
       // Log de progresso
       await this.log(datasetId, 'info', `Processados ${Math.min(i + batchSize, rows.length)} de ${rows.length} registros`)
+    }
+  }
+
+  static async clearCollectionData(collectionId: string): Promise<void> {
+    await this.ensureAuth()
+
+    // Buscar datasets não-atuais da coleção
+    const { data: datasets, error: datasetsError } = await supabase
+      .from('datasets')
+      .select('id')
+      .eq('collection_id', collectionId)
+      .eq('is_current', false)
+
+    if (datasetsError) {
+      throw new Error(`Erro ao buscar datasets para limpeza: ${datasetsError.message}`)
+    }
+
+    if (datasets && datasets.length > 0) {
+      const datasetIds = datasets.map(d => d.id)
+
+      // Remover dados dos datasets
+      const { error: rowsError } = await supabase
+        .from('dataset_rows')
+        .delete()
+        .in('dataset_id', datasetIds)
+
+      if (rowsError) {
+        throw new Error(`Erro ao remover dados: ${rowsError.message}`)
+      }
+
+      // Remover colunas dos datasets
+      const { error: columnsError } = await supabase
+        .from('dataset_columns')
+        .delete()
+        .in('dataset_id', datasetIds)
+
+      if (columnsError) {
+        throw new Error(`Erro ao remover colunas: ${columnsError.message}`)
+      }
+
+      // Remover logs dos datasets
+      const { error: logsError } = await supabase
+        .from('upload_logs')
+        .delete()
+        .in('dataset_id', datasetIds)
+
+      if (logsError) {
+        throw new Error(`Erro ao remover logs: ${logsError.message}`)
+      }
+
+      // Remover os próprios datasets
+      const { error: datasetsDeleteError } = await supabase
+        .from('datasets')
+        .delete()
+        .in('id', datasetIds)
+
+      if (datasetsDeleteError) {
+        throw new Error(`Erro ao remover datasets: ${datasetsDeleteError.message}`)
+      }
     }
   }
 

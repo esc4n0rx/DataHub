@@ -17,6 +17,21 @@ export const setCurrentUser = (userId: string) => {
 export type Database = {
   public: {
     Tables: {
+      // Nova tabela para coleções
+      collections: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string | null
+          category: string
+          is_fluid: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['collections']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['collections']['Insert']>
+      }
       datasets: {
         Row: {
           id: string
@@ -30,6 +45,10 @@ export type Database = {
           status: 'analyzing' | 'pending_adjustment' | 'confirmed' | 'error'
           created_at: string
           updated_at: string
+          // Novos campos
+          collection_id: string | null
+          is_current: boolean
+          version: number
         }
         Insert: Omit<Database['public']['Tables']['datasets']['Row'], 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Database['public']['Tables']['datasets']['Insert']>

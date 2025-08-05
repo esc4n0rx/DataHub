@@ -13,6 +13,9 @@ import { FileAnalyzer } from "./upload/FileAnalyzer"
 import { DataTypeSelector } from "./upload/DataTypeSelector"
 import { UploadProgress } from "./upload/UploadProgress"
 import { UploadLogs } from "./upload/UploadLogs"
+import { CollectionSelector } from "./upload/CollectionSelector"
+import { FluidUploadMode } from "./upload/FluidUploadMode"
+import { UploadMode, FluidUploadConfig } from "@/types/collections"
 
 const mockPreviewData = [
   { id: 1, nome: "João Silva", email: "joao@empresa.com", departamento: "Vendas", salario: "R$ 5.000" },
@@ -27,6 +30,10 @@ export function UploadContent() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [showDataTypeSelector, setShowDataTypeSelector] = useState(false)
+  
+  // Novos estados para coleções
+  const [uploadMode, setUploadMode] = useState<UploadMode>({ type: 'individual' })
+  const [fluidConfig, setFluidConfig] = useState<FluidUploadConfig | null>(null)
 
   const { 
     progress, 
@@ -64,6 +71,8 @@ export function UploadContent() {
     setSelectedFile(null)
     setShowPreview(false)
     setUploadSuccess(false)
+    setUploadMode({ type: 'individual' })
+    setFluidConfig(null)
     reset()
     setShowDataTypeSelector(false)
   }
@@ -78,7 +87,12 @@ export function UploadContent() {
     if (!selectedFile) return
     
     setShowDataTypeSelector(false)
-    await confirmWithAdjustments(adjustments, selectedFile)
+    
+    // Passar configurações de coleção e upload fluido
+    await confirmWithAdjustments(adjustments, selectedFile, {
+      uploadMode,
+      fluidConfig: uploadMode.type === 'fluid' ? fluidConfig : undefined
+    })
   }
 
   const handleRefreshLogs = () => {
@@ -87,12 +101,24 @@ export function UploadContent() {
     }
   }
 
+  const handleModeChange = (mode: UploadMode) => {
+    setUploadMode(mode)
+    // Reset configurações fluidas se não for upload fluido
+    if (mode.type !== 'fluid') {
+      setFluidConfig(null)
+    }
+  }
+
+  const handleFluidConfigChange = (config: FluidUploadConfig) => {
+    setFluidConfig(config)
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Upload de Dados</h1>
         <p className="text-muted-foreground">
-          Importe arquivos CSV e Excel com análise automática de tipos de dados
+          Importe arquivos CSV e Excel com análise automática de tipos de dados e organização em coleções
         </p>
       </div>
 
@@ -105,8 +131,28 @@ export function UploadContent() {
         </Alert>
       )}
 
-      {/* Novo Sistema de Upload Inteligente */}
-      <FileAnalyzer onAnalysisComplete={handleAnalysisComplete} />
+      {/* Seletor de Modo de Upload */}
+      <CollectionSelector
+        selectedMode={uploadMode}
+        onModeChange={handleModeChange}
+        disabled={isAnalyzing || !!progress}
+      />
+
+      {/* Configurações de Upload Fluido */}
+      {uploadMode.type === 'fluid' && uploadMode.collection_id && (
+        <FluidUploadMode
+          collectionId={uploadMode.collection_id}
+          onConfigChange={handleFluidConfigChange}
+          disabled={isAnalyzing || !!progress}
+        />
+      )}
+
+      {/* Sistema de Upload Inteligente */}
+      <FileAnalyzer 
+        onAnalysisComplete={handleAnalysisComplete}
+        uploadMode={uploadMode}
+        fluidConfig={fluidConfig}
+      />
 
       {/* Progress do Upload */}
       {progress && (
@@ -120,6 +166,7 @@ export function UploadContent() {
         onClose={() => setShowDataTypeSelector(false)}
         onConfirm={handleConfirmAdjustments}
         isProcessing={isAnalyzing}
+        uploadMode={uploadMode}
       />
 
       {/* Logs do Upload */}
@@ -134,7 +181,6 @@ export function UploadContent() {
 
       {/* Sistema Antigo - manter apenas como exemplo */}
       <div className="grid gap-6 md:grid-cols-2">
-
         <Card>
           <CardHeader>
             <CardTitle>Instruções</CardTitle>
@@ -151,22 +197,51 @@ export function UploadContent() {
             </div>
 
             <div className="space-y-2">
-              <h4 className="text-sm font-medium">Novo Sistema Inteligente:</h4>
+              <h4 className="text-sm font-medium">Novos Recursos:</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Análise automática de tipos de dados</li>
-                <li>• Detecção de textos, números, datas, emails, etc.</li>
-                <li>• Ajuste manual quando necessário</li>
-                <li>• Logs detalhados do processo</li>
-                <li>• Validação de integridade dos dados</li>
+                <li>• <strong>Coleções:</strong> Organize uploads por categoria</li>
+                <li>• <strong>Upload Fluido:</strong> Atualize dados para dashboards em tempo real</li>
+                <li>• <strong>Histórico de Versões:</strong> Mantenha controle das alterações</li>
+                <li>• <strong>Análise Inteligente:</strong> Detecção automática de tipos</li>
+                <li>• <strong>Validação de Esquema:</strong> Consistência nos uploads fluidos</li>
               </ul>
             </div>
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                Use o sistema inteligente para melhor análise e controle dos seus dados.
+                Use coleções para organizar seus dados e upload fluido para manter dashboards sempre atualizados.
               </AlertDescription>
             </Alert>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Exemplos de Uso</CardTitle>
+            <CardDescription>Como usar cada modo de upload</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">Upload Individual:</h4>
+              <p className="text-sm text-muted-foreground">
+                Para dados únicos ou históricos que não precisam ser atualizados.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">Coleção "Vendas":</h4>
+              <p className="text-sm text-muted-foreground">
+                Agrupe relatórios mensais, mantendo histórico completo de vendas.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">Upload Fluido "Estoque":</h4>
+              <p className="text-sm text-muted-foreground">
+                Atualize dados de estoque várias vezes ao dia para dashboards em tempo real.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

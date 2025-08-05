@@ -1,8 +1,10 @@
+export type DataType = 'text' | 'number' | 'date' | 'boolean' | 'email' | 'phone'
+
 export interface Dataset {
   id: string
   user_id: string
   name: string
-  description?: string
+  description: string | null
   file_name: string
   file_size: number
   total_rows: number
@@ -10,6 +12,10 @@ export interface Dataset {
   status: 'analyzing' | 'pending_adjustment' | 'confirmed' | 'error'
   created_at: string
   updated_at: string
+  // Novos campos para coleções
+  collection_id?: string
+  is_current?: boolean
+  version?: number
 }
 
 export interface DatasetColumn {
@@ -19,7 +25,7 @@ export interface DatasetColumn {
   column_index: number
   data_type: DataType
   is_required: boolean
-  sample_values: string[]
+  sample_values: string[] | null
   created_at: string
 }
 
@@ -36,19 +42,8 @@ export interface UploadLog {
   dataset_id: string
   level: 'info' | 'warning' | 'error'
   message: string
-  details?: Record<string, any>
+  details: Record<string, any> | null
   created_at: string
-}
-
-export type DataType = 'text' | 'number' | 'date' | 'boolean' | 'email' | 'phone'
-
-export interface AnalysisResult {
-  dataset_id: string
-  columns: ColumnAnalysis[]
-  sample_rows: Record<string, any>[]
-  needs_adjustment: boolean
-  total_rows: number
-  total_columns: number
 }
 
 export interface ColumnAnalysis {
@@ -60,11 +55,25 @@ export interface ColumnAnalysis {
   issues: string[]
 }
 
+export interface AnalysisResult {
+  dataset_id: string
+  columns: ColumnAnalysis[]
+  sample_rows: Record<string, any>[]
+  needs_adjustment: boolean
+  total_rows: number
+  total_columns: number
+  // Novos campos
+  collection_id?: string
+  is_fluid_upload?: boolean
+  schema_compatible?: boolean
+}
+
 export interface UploadProgress {
   phase: 'uploading' | 'analyzing' | 'adjusting' | 'processing' | 'completed' | 'error'
   progress: number
   message: string
   dataset_id?: string
+  collection_id?: string
 }
 
 export interface DataTypeAdjustment {
