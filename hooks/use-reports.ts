@@ -4,11 +4,18 @@ import { useState, useCallback } from 'react'
 import { ReportsAPI } from '@/lib/reports-api'
 import { ExcelExporter } from '@/lib/excel-export'
 import { DatasetWithDetails, DatasetFilters, PaginationState } from '@/types/reports'
+import { ReportsOverview, ReportsView, ReportsNavigation, CollectionWithStats } from '@/types/reports-enhanced'
 import { useToast } from '@/hooks/use-toast'
 
 export function useReports() {
-  const [datasets, setDatasets] = useState<DatasetWithDetails[]>([])
+  const [overview, setOverview] = useState<ReportsOverview | null>(null)
+  const [selectedCollection, setSelectedCollection] = useState<CollectionWithStats | null>(null)
+  const [collectionDatasets, setCollectionDatasets] = useState<DatasetWithDetails[]>([])
   const [selectedDataset, setSelectedDataset] = useState<DatasetWithDetails | null>(null)
+  const [currentView, setCurrentView] = useState<ReportsView>({ type: 'overview' })
+  const [navigation, setNavigation] = useState<ReportsNavigation>({
+    path: [{ type: 'overview', name: 'Relatórios' }]
+  })
   const [loading, setLoading] = useState(false)
   const [filters, setFilters] = useState<DatasetFilters>({
     search: '',
@@ -23,13 +30,13 @@ export function useReports() {
   })
   const { toast } = useToast()
 
-  const loadDatasets = useCallback(async () => {
+  const loadOverview = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await ReportsAPI.getDatasets()
-      setDatasets(data)
+      const data = await ReportsAPI.getReportsOverview()
+      setOverview(data)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro ao carregar datasets'
+      const message = error instanceof Error ? error.message : 'Erro ao carregar visão geral'
       toast({
         variant: "destructive",
         title: "Erro",
@@ -40,12 +47,45 @@ export function useReports() {
     }
   }, [toast])
 
-  const loadDatasetData = useCallback(async (datasetId: string) => {
+  const navigateToCollection = useCallback(async (collectionId: string) => {
+    try {
+      setLoading(true)
+      
+      const collection = overview?.collections.find(c => c.id === collectionId)
+      if (!collection) {
+        throw new Error('Coleção não encontrada')
+      }
+
+      const datasets = await ReportsAPI.getCollectionDatasets(collectionId)
+      
+      setSelectedCollection(collection)
+      setCollectionDatasets(datasets)
+      setCurrentView({ type: 'collection', collection_id: collectionId })
+      setNavigation({
+        path: [
+          { type: 'overview', name: 'Relatórios' },
+          { type: 'collection', id: collectionId, name: collection.name }
+        ]
+      })
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao carregar coleção'
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [overview, toast])
+
+  const navigateToDataset = useCallback(async (datasetId: string) => {
     try {
       setLoading(true)
       
       // Buscar detalhes do dataset
-      const dataset = datasets.find(d => d.id === datasetId)
+      const dataset = await ReportsAPI.getDatasetDetails(datasetId)
       if (!dataset) {
         throw new Error('Dataset não encontrado')
       }
@@ -70,9 +110,22 @@ export function useReports() {
 
       setSelectedDataset(datasetWithDetails)
       setPagination(prev => ({ ...prev, total }))
+      setCurrentView({ type: 'dataset', dataset_id: datasetId })
+      
+      // Atualizar navegação baseado no contexto atual
+      const newPath = [...navigation.path]
+      if (currentView.type === 'collection') {
+        newPath.push({ type: 'dataset', id: datasetId, name: dataset.name })
+      } else {
+        // Navegação direta para dataset individual
+        newPath.splice(1) // Remove tudo exceto "Relatórios"
+        newPath.push({ type: 'dataset', id: datasetId, name: dataset.name })
+      }
+      
+      setNavigation({ path: newPath })
 
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro ao carregar dados'
+      const message = error instanceof Error ? error.message : 'Erro ao carregar dataset'
       toast({
         variant: "destructive",
         title: "Erro",
@@ -81,13 +134,128 @@ export function useReports() {
     } finally {
       setLoading(false)
     }
-  }, [datasets, pagination.page, pagination.pageSize, filters.search, filters.column, toast])
+  }, [navigation.path, currentView.type, pagination.page, pagination.pageSize, filters.search, filters.column, toast])
 
-  const refreshData = useCallback(async () => {
-    if (selectedDataset) {
-      await loadDatasetData(selectedDataset.id)
+  const navigateToOverview = useCallback(() => {
+    setCurrentView({ type: 'overview' })
+    setSelectedCollection(null)
+    setCollectionDatasets([])
+    setSelectedDataset(null)
+    setNavigation({ path: [{ type: 'overview', name: 'Relatórios' }] })
+    setFilters({ search: '', column: null, sortBy: null, sortOrder: 'asc' })
+    setPagination({ page: 1, pageSize: 50, total: 0 })
+  }, [])
+
+  const navigateBack = useCallback(() => {
+    if (currentView.type === 'dataset') {
+      if (currentView.collection_id) {
+        // Voltar para a coleção
+        navigateToCollection(currentView.collection_id)
+      } else {
+        // Voltar para overview (dataset individual)
+        navigateToOverview()
+      }
+    } else if (currentView.type === 'collection') {
+      navigateToOverview()
     }
-  }, [selectedDataset, loadDatasetData])
+  }, [currentView, navigateToCollection, navigateToOverview])
+
+  const deleteCollection = useCallback(async (collectionId: string): Promise<boolean> => {
+    try {
+      setLoading(true)
+      await ReportsAPI.deleteCollection(collectionId)
+      
+      toast({
+        title: "Sucesso",
+        description: "Coleção excluída com sucesso"
+      })
+      
+      // Recarregar overview
+      await loadOverview()
+      
+      // Se estava visualizando a coleção excluída, voltar para overview
+      if (currentView.collection_id === collectionId) {
+        navigateToOverview()
+      }
+      
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao excluir coleção'
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: message
+      })
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [toast, loadOverview, currentView.collection_id, navigateToOverview])
+
+  const deleteDataset = useCallback(async (datasetId: string): Promise<boolean> => {
+    try {
+      setLoading(true)
+      await ReportsAPI.deleteDataset(datasetId)
+      
+      toast({
+        title: "Sucesso",
+        description: "Dataset excluído com sucesso"
+      })
+      
+      // Recarregar dados baseado no contexto atual
+      if (currentView.type === 'collection' && currentView.collection_id) {
+        // Recarregar datasets da coleção
+        const datasets = await ReportsAPI.getCollectionDatasets(currentView.collection_id)
+        setCollectionDatasets(datasets)
+        
+        // Atualizar contador na coleção selecionada
+        if (selectedCollection) {
+          setSelectedCollection({
+            ...selectedCollection,
+            dataset_count: datasets.length
+          })
+        }
+      } else {
+        // Recarregar overview
+        await loadOverview()
+      }
+      
+      // Se estava visualizando o dataset excluído, voltar
+      if (currentView.dataset_id === datasetId) {
+        navigateBack()
+      }
+      
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao excluir dataset'
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: message
+      })
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [toast, currentView, selectedCollection, loadOverview, navigateBack])
+
+  const refreshCurrentView = useCallback(async () => {
+    switch (currentView.type) {
+      case 'overview':
+        await loadOverview()
+        break
+      case 'collection':
+        if (currentView.collection_id) {
+          await navigateToCollection(currentView.collection_id)
+        }
+        break
+      case 'dataset':
+        if (currentView.dataset_id) {
+          await navigateToDataset(currentView.dataset_id)
+        }
+        break
+    }
+  }, [currentView, loadOverview, navigateToCollection, navigateToDataset])
 
   const updateFilters = useCallback((newFilters: Partial<DatasetFilters>) => {
     setFilters(prev => ({ ...prev, ...newFilters }))
@@ -98,11 +266,16 @@ export function useReports() {
     setPagination(prev => ({ ...prev, ...newPagination }))
   }, [])
 
-  const exportToExcel = useCallback(async (datasetId: string) => {
+  const exportDataset = useCallback(async (datasetId: string) => {
     try {
       setLoading(true)
       
-      const dataset = datasets.find(d => d.id === datasetId)
+      // Encontrar o dataset (pode estar em overview.individual_datasets ou collectionDatasets)
+      let dataset = overview?.individual_datasets.find(d => d.id === datasetId)
+      if (!dataset) {
+        dataset = collectionDatasets.find(d => d.id === datasetId)
+      }
+      
       if (!dataset) {
         throw new Error('Dataset não encontrado')
       }
@@ -136,35 +309,31 @@ export function useReports() {
     } finally {
       setLoading(false)
     }
-  }, [datasets, toast])
-
-  const clearSelection = useCallback(() => {
-    setSelectedDataset(null)
-    setFilters({
-      search: '',
-      column: null,
-      sortBy: null,
-      sortOrder: 'asc'
-    })
-    setPagination({
-      page: 1,
-      pageSize: 50,
-      total: 0
-    })
-  }, [])
+  }, [overview, collectionDatasets, toast])
 
   return {
-    datasets,
+    // State
+    overview,
+    selectedCollection,
+    collectionDatasets,
     selectedDataset,
+    currentView,
+    navigation,
     loading,
     filters,
     pagination,
-    loadDatasets,
-    loadDatasetData,
-    refreshData,
+    
+    // Actions
+    loadOverview,
+    navigateToCollection,
+    navigateToDataset,
+    navigateToOverview,
+    navigateBack,
+    deleteCollection,
+    deleteDataset,
+    refreshCurrentView,
     updateFilters,
     updatePagination,
-    exportToExcel,
-    clearSelection
+    exportDataset
   }
 }

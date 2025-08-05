@@ -22,8 +22,8 @@ export interface CollectionDataset {
   total_rows: number
   total_columns: number
   status: 'analyzing' | 'pending_adjustment' | 'confirmed' | 'error'
-  is_current: boolean // Para upload fluido, indica se é a versão atual
-  version: number // Versionamento para upload fluido
+  is_current: boolean
+  version: number
   created_at: string
   updated_at: string
 }

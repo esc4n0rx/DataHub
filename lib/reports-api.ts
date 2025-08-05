@@ -1,5 +1,6 @@
 import { supabase, setCurrentUser } from './supabase'
 import { DatasetWithDetails, DatasetColumnInfo, DatasetRowData } from '@/types/reports'
+import { CollectionWithStats, IndividualDataset, ReportsOverview } from '@/types/reports-enhanced'
 import { getStoredAuthData } from './auth'
 
 export class ReportsAPI {
@@ -11,6 +12,140 @@ export class ReportsAPI {
     
     await setCurrentUser(authData.user.id)
     return authData.user.id
+  }
+
+  static async getReportsOverview(): Promise<ReportsOverview> {
+    await this.ensureAuth()
+
+    // Buscar coleções com estatísticas
+    const { data: collectionsData, error: collectionsError } = await supabase
+      .from('collections')
+      .select(`
+        *,
+        datasets!inner(
+          id,
+          name,
+          file_name,
+          file_size,
+          total_rows,
+          total_columns,
+          status,
+          created_at,
+          updated_at,
+          is_current,
+          version
+        )
+      `)
+      .order('name')
+
+    if (collectionsError) {
+      throw new Error(`Erro ao buscar coleções: ${collectionsError.message}`)
+    }
+
+    // Buscar datasets individuais (sem coleção)
+    const { data: individualData, error: individualError } = await supabase
+      .from('datasets')
+      .select('*')
+      .is('collection_id', null)
+      .eq('status', 'confirmed')
+      .order('created_at', { ascending: false })
+
+    if (individualError) {
+      throw new Error(`Erro ao buscar datasets individuais: ${individualError.message}`)
+    }
+
+    // Processar coleções com estatísticas
+    const collections: CollectionWithStats[] = collectionsData?.map(collection => {
+      const datasets = collection.datasets || []
+      const currentDataset = datasets.find((d: any) => d.is_current)
+      const totalRecords = datasets.reduce((sum: number, d: any) => sum + (d.total_rows || 0), 0)
+      const totalSize = datasets.reduce((sum: number, d: any) => sum + (d.file_size || 0), 0)
+      const sortedDatasets = datasets.sort((a: any, b: any) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+      const lastUpload = sortedDatasets.length > 0 ? sortedDatasets[0].created_at : null
+
+      return {
+        ...collection,
+        current_dataset: currentDataset,
+        total_records: totalRecords,
+        total_size: totalSize,
+        last_upload: lastUpload,
+        dataset_count: datasets.length
+      }
+    }) || []
+
+    const individual_datasets: IndividualDataset[] = individualData || []
+
+    // Calcular estatísticas totais
+    const totalCollectionRecords = collections.reduce((sum, c) => sum + c.total_records, 0)
+    const totalIndividualRecords = individual_datasets.reduce((sum, d) => sum + d.total_rows, 0)
+    const totalCollectionSize = collections.reduce((sum, c) => sum + c.total_size, 0)
+    const totalIndividualSize = individual_datasets.reduce((sum, d) => sum + d.file_size, 0)
+
+    return {
+      collections,
+      individual_datasets,
+      total_stats: {
+        total_collections: collections.length,
+        total_datasets: collections.reduce((sum, c) => sum + c.dataset_count, 0) + individual_datasets.length,
+        total_records: totalCollectionRecords + totalIndividualRecords,
+        total_size: totalCollectionSize + totalIndividualSize
+      }
+    }
+  }
+
+  static async getCollectionDatasets(collectionId: string): Promise<DatasetWithDetails[]> {
+    await this.ensureAuth()
+
+    const { data, error } = await supabase
+      .from('datasets')
+      .select('*')
+      .eq('collection_id', collectionId)
+      .eq('status', 'confirmed')
+      .order('version', { ascending: false })
+
+    if (error) {
+      throw new Error(`Erro ao buscar datasets da coleção: ${error.message}`)
+    }
+
+    return data || []
+  }
+
+  static async deleteCollection(collectionId: string): Promise<void> {
+    await this.ensureAuth()
+
+    // Verificar se há datasets na coleção
+    const { data: datasets } = await supabase
+      .from('datasets')
+      .select('id')
+      .eq('collection_id', collectionId)
+
+    if (datasets && datasets.length > 0) {
+      throw new Error('Não é possível excluir uma coleção que contém datasets. Exclua os datasets primeiro.')
+    }
+
+    const { error } = await supabase
+      .from('collections')
+      .delete()
+      .eq('id', collectionId)
+
+    if (error) {
+      throw new Error(`Erro ao excluir coleção: ${error.message}`)
+    }
+  }
+
+  static async deleteDataset(datasetId: string): Promise<void> {
+    await this.ensureAuth()
+
+    const { error } = await supabase
+      .from('datasets')
+      .delete()
+      .eq('id', datasetId)
+
+    if (error) {
+      throw new Error(`Erro ao excluir dataset: ${error.message}`)
+    }
   }
 
   static async getDatasets(): Promise<DatasetWithDetails[]> {

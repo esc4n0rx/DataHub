@@ -21,8 +21,9 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { AlertTriangle, CheckCircle, Info } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Info, Zap, Folder } from 'lucide-react'
 import { AnalysisResult, DataType, DataTypeAdjustment } from '@/types/upload'
+import { UploadMode } from '@/types/collections'
 
 interface DataTypeSelectorProps {
   analysisResult: AnalysisResult | null
@@ -30,6 +31,7 @@ interface DataTypeSelectorProps {
   onClose: () => void
   onConfirm: (adjustments: DataTypeAdjustment[]) => void
   isProcessing?: boolean
+  uploadMode?: UploadMode
 }
 
 const DATA_TYPE_OPTIONS: { value: DataType; label: string; description: string }[] = [
@@ -46,7 +48,8 @@ export function DataTypeSelector({
   isOpen,
   onClose,
   onConfirm,
-  isProcessing = false
+  isProcessing = false,
+  uploadMode
 }: DataTypeSelectorProps) {
   const [adjustments, setAdjustments] = useState<DataTypeAdjustment[]>([])
   const [hasChanges, setHasChanges] = useState(false)
@@ -92,6 +95,34 @@ export function DataTypeSelector({
     onConfirm(adjustments)
   }
 
+  const getModeDescription = () => {
+    if (!uploadMode) return null
+
+    switch (uploadMode.type) {
+      case 'individual':
+        return (
+          <div className="flex items-center space-x-2 text-sm text-blue-600">
+            <Info className="h-4 w-4" />
+            <span>Upload Individual - será criado um dataset independente</span>
+          </div>
+        )
+      case 'collection':
+        return (
+          <div className="flex items-center space-x-2 text-sm text-purple-600">
+            <Folder className="h-4 w-4" />
+            <span>Upload em Coleção - será adicionado à coleção selecionada</span>
+          </div>
+        )
+      case 'fluid':
+        return (
+          <div className="flex items-center space-x-2 text-sm text-orange-600">
+            <Zap className="h-4 w-4" />
+            <span>Upload Fluido - dados existentes serão substituídos</span>
+          </div>
+        )
+    }
+  }
+
   if (!analysisResult) return null
 
   return (
@@ -103,6 +134,7 @@ export function DataTypeSelector({
             Revise e ajuste os tipos de dados detectados automaticamente. 
             Colunas com baixa confiança precisam de atenção especial.
           </DialogDescription>
+          {getModeDescription()}
         </DialogHeader>
 
         <div className="space-y-6">
@@ -123,6 +155,20 @@ export function DataTypeSelector({
               <div className="text-sm text-muted-foreground">Requerem Atenção</div>
             </div>
           </div>
+
+          {/* Upload Fluido - Aviso Especial */}
+          {uploadMode?.type === 'fluid' && (
+            <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
+              <div className="flex items-center space-x-2 mb-2">
+                <Zap className="h-5 w-5 text-orange-600" />
+                <span className="font-medium text-orange-800 dark:text-orange-200">Upload Fluido Ativo</span>
+              </div>
+              <p className="text-sm text-orange-700 dark:text-orange-300">
+                Este upload substituirá os dados existentes na coleção. Certifique-se de que a estrutura 
+                das colunas está correta antes de prosseguir.
+              </p>
+            </div>
+          )}
 
           {/* Tabela de Configuração */}
           <div className="border rounded-md">
