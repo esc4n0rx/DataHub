@@ -81,9 +81,13 @@ export function UploadTypeSelector({
   }
 
   const handleFluidConfigChange = (key: keyof NonNullable<CreateIntegrationData['fluid_config']>, value: boolean) => {
+    // Garantir que sempre temos um objeto base válido
+    const currentConfig = formData.fluid_config || { preserve_schema: false, backup_previous: false }
+    
     onChange({
       fluid_config: {
-        ...formData.fluid_config,
+        preserve_schema: currentConfig.preserve_schema,
+        backup_previous: currentConfig.backup_previous,
         [key]: value
       }
     })
@@ -129,9 +133,7 @@ export function UploadTypeSelector({
                         <Icon className="h-4 w-4" />
                         <span className="font-medium">{type.label}</span>
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        {type.description}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{type.description}</p>
                     </div>
                   </div>
                 </div>
@@ -141,110 +143,102 @@ export function UploadTypeSelector({
         </CardContent>
       </Card>
 
-      {/* Configurações Específicas */}
-      {formData.upload_type !== 'dataset' && (
+      {/* Configuração de Coleção de Destino */}
+      {(formData.upload_type === 'collection' || formData.upload_type === 'fluid') && (
         <Card>
           <CardHeader>
             <CardTitle>Coleção de Destino</CardTitle>
             <CardDescription>
-              Selecione a coleção onde os arquivos serão processados
+              {formData.upload_type === 'collection' 
+                ? 'Selecione a coleção onde os datasets serão adicionados'
+                : 'Selecione a coleção fluida que será atualizada'
+              }
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3">
-              {collections.map((collection) => (
-                <div
-                  key={collection.id}
-                  className={`
-                    p-3 border rounded-lg cursor-pointer transition-all
-                    ${formData.target_collection_id === collection.id
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50'
-                    }
-                    ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-                  `}
-                  onClick={() => !disabled && handleCollectionChange(collection.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-3 h-3 rounded-full border-2 ${
-                        formData.target_collection_id === collection.id
-                          ? 'border-primary bg-primary'
-                          : 'border-muted-foreground'
-                      }`} />
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium">{collection.name}</span>
-                          {collection.is_fluid && (
-                            <Badge variant="outline" className="text-xs">
-                              <Zap className="w-3 h-3 mr-1" />
-                              Fluida
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {collection.dataset_count} datasets • Criada em {new Date(collection.created_at).toLocaleDateString('pt-BR')}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="space-y-2">
+              <Label>Coleção</Label>
+              <select
+                className="w-full px-3 py-2 border border-input bg-background rounded-md text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                value={formData.target_collection_id}
+                onChange={(e) => handleCollectionChange(e.target.value)}
+                disabled={disabled}
+              >
+                <option value="">Selecione uma coleção...</option>
+                {collections
+                  .filter(c => formData.upload_type === 'fluid' ? c.is_fluid : true)
+                  .map(collection => (
+                    <option key={collection.id} value={collection.id}>
+                      {collection.name} {collection.is_fluid && '(Fluido)'}
+                    </option>
+                  ))
+                }
+              </select>
             </div>
 
-            {collections.length === 0 && (
-              <div className="text-center py-6 text-muted-foreground">
-                <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>Nenhuma coleção encontrada</p>
-                <p className="text-sm">Crie uma coleção primeiro</p>
+            {selectedCollection && (
+              <div className="p-3 bg-muted rounded-lg">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <span className="font-medium text-sm">Informações da Coleção</span>
+                </div>
+                <div className="grid gap-2 text-sm text-muted-foreground">
+                  <div className="flex justify-between">
+                    <span>Nome:</span>
+                    <span className="font-medium text-foreground">{selectedCollection.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Tipo:</span>
+                    <Badge variant={selectedCollection.is_fluid ? "destructive" : "secondary"}>
+                      {selectedCollection.is_fluid ? 'Fluido' : 'Normal'}
+                    </Badge>
+                  </div>
+                  {selectedCollection.description && (
+                    <div className="mt-2">
+                      <span className="text-xs">{selectedCollection.description}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* Configuração do Nome do Dataset */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Nome do Dataset</CardTitle>
-          <CardDescription>
-            Padrão para nomear os datasets criados automaticamente
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="dataset-pattern">Padrão do Nome</Label>
-            <Input
-              id="dataset-pattern"
-              value={formData.dataset_name_pattern || ''}
-              onChange={(e) => onChange({ dataset_name_pattern: e.target.value })}
-              placeholder="Ex: Vendas_{date} ou Estoque_Atual"
-              disabled={disabled}
-            />
-            <div className="mt-2 text-xs text-muted-foreground space-y-1">
-              <p><strong>Variáveis disponíveis:</strong></p>
-              <ul className="list-disc list-inside space-y-0.5 ml-2">
-                <li><code>{'{date}'}</code> - Data atual (ex: 05/08/2025)</li>
-                <li><code>{'{datetime}'}</code> - Data e hora (ex: 05/08/2025 14:30:15)</li>
-                <li><code>{'{timestamp}'}</code> - Timestamp Unix</li>
-                <li><code>{'{filename}'}</code> - Nome do arquivo (sem extensão)</li>
-                <li><code>{'{source}'}</code> - Sistema de origem</li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Configurações de Upload Fluido */}
-      {formData.upload_type === 'fluid' && selectedCollection?.is_fluid && (
+      {/* Configuração de Padrão de Nome para Dataset Individual */}
+      {formData.upload_type === 'dataset' && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Zap className="h-5 w-5 text-orange-500" />
-              <span>Configurações de Upload Fluido</span>
-            </CardTitle>
+            <CardTitle>Nome do Dataset</CardTitle>
             <CardDescription>
-              Configure como os dados serão substituídos na coleção
+              Padrão para nomear os datasets criados automaticamente
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="dataset-name-pattern">Padrão de Nome</Label>
+              <Input
+                id="dataset-name-pattern"
+                placeholder="Ex: Vendas_{data} ou {arquivo}"
+                value={formData.dataset_name_pattern || ''}
+                onChange={(e) => onChange({ dataset_name_pattern: e.target.value })}
+                disabled={disabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                Use {`{data}`} para incluir a data atual, {`{arquivo}`} para o nome do arquivo, ou texto fixo.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Configurações do Upload Fluido */}
+      {formData.upload_type === 'fluid' && formData.target_collection_id && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Configurações do Upload Fluido</CardTitle>
+            <CardDescription>
+              Opções para controlar como os dados são substituídos
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">

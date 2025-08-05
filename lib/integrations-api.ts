@@ -9,6 +9,10 @@ import {
   IntegrationWithStats 
 } from '@/types/integrations'
 
+interface UpdateIntegrationData extends Partial<CreateIntegrationData> {
+  status?: 'active' | 'inactive' | 'error'
+}
+
 export class IntegrationsAPI {
   // Integrações
   static async createIntegration(data: CreateIntegrationData): Promise<string> {
@@ -107,7 +111,7 @@ export class IntegrationsAPI {
     return data
   }
 
-  static async updateIntegration(id: string, updates: Partial<CreateIntegrationData>): Promise<void> {
+  static async updateIntegration(id: string, updates: UpdateIntegrationData): Promise<void> {
     const { error } = await supabase
       .from('integrations')
       .update({
