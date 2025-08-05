@@ -27,7 +27,6 @@ export function FileAnalyzer({ onAnalysisComplete, uploadMode, fluidConfig }: Fi
     if (file) {
       setSelectedFile(file)
       if (!datasetName) {
-        // Auto-gerar nome baseado no arquivo e modo
         const baseName = file.name.split('.')[0].replace(/[_-]/g, ' ')
         const formattedName = baseName.charAt(0).toUpperCase() + baseName.slice(1)
         
@@ -78,12 +77,10 @@ export function FileAnalyzer({ onAnalysisComplete, uploadMode, fluidConfig }: Fi
  const isReadyToAnalyze = () => {
    if (!selectedFile || !datasetName.trim()) return false
    
-   // Para coleções e upload fluido, precisa ter coleção selecionada
    if ((uploadMode.type === 'collection' || uploadMode.type === 'fluid') && !uploadMode.collection_id) {
      return false
    }
    
-   // Para upload fluido, precisa ter configuração
    if (uploadMode.type === 'fluid' && !fluidConfig) {
      return false
    }

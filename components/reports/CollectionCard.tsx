@@ -73,7 +73,7 @@ export function CollectionCard({
             <Folder className={`h-5 w-5 ${collection.is_fluid ? 'text-orange-600' : 'text-blue-600'}`} />
             <span className="truncate">{collection.name}</span>
             {collection.is_fluid && (
-              <Zap className="h-4 w-4 text-orange-600" title="Upload Fluido" />
+              <Zap className="h-4 w-4 text-orange-600" />
             )}
           </div>
           <div className="flex items-center space-x-2">

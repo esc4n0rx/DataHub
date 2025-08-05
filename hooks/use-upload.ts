@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast'
 
 interface UploadOptions {
   uploadMode: UploadMode
-  fluidConfig?: FluidUploadConfig
+  fluidConfig?: FluidUploadConfig | null | undefined
 }
 
 export function useUpload() {
@@ -121,33 +121,25 @@ export function useUpload() {
           undefined, // description
           options?.uploadMode.collection_id ? {
             collection_id: options.uploadMode.collection_id,
-            is_current: false, // Para coleções normais, não há conceito de "atual"
-            version: 1
+            is_current: false
           } : undefined
         )
       }
 
       await UploadAPI.log(datasetId, 'info', 'Dataset criado com sucesso')
 
-      // Verificar se precisa de ajuste
-      const needsAdjustment = columnAnalysis.some(col => 
-        col.confidence < 0.8 || col.issues.length > 0
-      )
+      updateProgress({
+        progress: 80,
+        message: 'Analisando tipos de colunas...'
+      })
 
-      const issues = UploadAnalyzer.validateDataIntegrity(columnAnalysis, fileAnalysis.data)
-      
-      if (issues.length > 0) {
-        for (const issue of issues) {
-          await UploadAPI.log(datasetId, 'warning', issue)
-        }
-      }
-
+      // Montar resultado da análise usando as propriedades corretas da interface AnalysisResult
       const result: AnalysisResult = {
         dataset_id: datasetId,
         columns: columnAnalysis,
-        sample_rows: fileAnalysis.data.slice(0, 5),
-        needs_adjustment: needsAdjustment,
-        total_rows: fileAnalysis.totalRows,
+        sample_rows: fileAnalysis.data.slice(0, 5), // Usar sample_rows em vez de sample_data
+        needs_adjustment: columnAnalysis.some(col => col.confidence < 0.8),
+        total_rows: fileAnalysis.totalRows, // Propriedades individuais em vez de file_info
         total_columns: fileAnalysis.headers.length,
         collection_id: options?.uploadMode.collection_id,
         is_fluid_upload: options?.uploadMode.type === 'fluid'
@@ -155,48 +147,51 @@ export function useUpload() {
 
       setAnalysisResult(result)
 
-      if (needsAdjustment) {
-        await UploadAPI.updateDatasetStatus(datasetId, 'pending_adjustment')
-        updateProgress({
-          phase: 'adjusting',
-          progress: 80,
-          message: 'Aguardando ajustes de tipos de dados...',
-          dataset_id: datasetId,
-          collection_id: options?.uploadMode.collection_id
+      // Se não precisa de ajustes, processar diretamente
+      if (!result.needs_adjustment) {
+        await processFileDirectly(result, file, options)
+      }
+
+      updateProgress({
+        phase: 'completed',
+        progress: 100,
+        message: result.needs_adjustment 
+          ? 'Análise concluída. Verifique os tipos de dados sugeridos.'
+          : 'Upload concluído com sucesso!'
+      })
+
+      if (!result.needs_adjustment) {
+        toast({
+          title: "Upload concluído",
+          description: options?.uploadMode.type === 'fluid' 
+            ? "Dados atualizados com sucesso!"
+            : "Dados processados e salvos com sucesso!"
         })
-      } else {
-        // Auto-processar se não precisa de ajuste
-        await processDataset(result, file, options)
       }
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
+      const errorMessage = error instanceof Error ? error.message : 'Erro na análise do arquivo'
       
-      setProgress({
+      updateProgress({
         phase: 'error',
         progress: 0,
-        message: errorMessage,
-        collection_id: options?.uploadMode.collection_id
+        message: errorMessage
       })
 
       toast({
         variant: "destructive",
-        title: "Erro no upload",
+        title: "Erro na análise",
         description: errorMessage
       })
-
-      if (analysisResult?.dataset_id) {
-        await UploadAPI.log(analysisResult.dataset_id, 'error', errorMessage)
-        await UploadAPI.updateDatasetStatus(analysisResult.dataset_id, 'error')
-      }
     } finally {
       setIsUploading(false)
     }
-  }, [toast, analysisResult?.dataset_id, updateProgress])
+  }, [toast, updateProgress])
 
-  const processDataset = useCallback(async (
-    result: AnalysisResult, 
-    file: File, 
+  // Função auxiliar para processar arquivo sem ajustes
+  const processFileDirectly = useCallback(async (
+    result: AnalysisResult,
+    file: File,
     options?: UploadOptions
   ): Promise<void> => {
     try {
@@ -284,25 +279,57 @@ export function useUpload() {
     adjustments: DataTypeAdjustment[],
     file: File,
     options?: UploadOptions
-  ): Promise<void> => {
+  ) => {
     if (!analysisResult) return
 
     try {
+      setIsUploading(true)
+
       updateProgress({
         phase: 'processing',
-        progress: 85,
-        message: 'Aplicando ajustes...'
+        progress: 0,
+        message: 'Aplicando ajustes nos tipos de dados...'
       })
 
-      // Aplicar ajustes
-      await UploadAPI.updateColumns(analysisResult.dataset_id, adjustments)
-      await UploadAPI.log(analysisResult.dataset_id, 'info', 'Ajustes de tipos aplicados')
+      // Enviar ajustes para a API
+      const response = await fetch('/api/upload/confirm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          datasetId: analysisResult.dataset_id,
+          adjustments,
+          uploadMode: options?.uploadMode,
+          fluidConfig: options?.fluidConfig || null
+        }),
+      })
 
-      // Processar com as configurações ajustadas
-      await processDataset(analysisResult, file, options)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Erro ao processar ajustes')
+      }
+
+      const result = await response.json()
+
+      updateProgress({
+        phase: 'completed',
+        progress: 100,
+        message: 'Processamento concluído com sucesso!'
+      })
+
+      toast({
+        title: "Upload concluído",
+        description: options?.uploadMode.type === 'fluid' 
+          ? "Dados atualizados com ajustes aplicados!"
+          : "Dados processados com ajustes aplicados!"
+      })
+
+      // Recarregar logs
+      await loadLogs(analysisResult.dataset_id)
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro ao aplicar ajustes'
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao confirmar ajustes'
       
       updateProgress({
         phase: 'error',
@@ -312,19 +339,21 @@ export function useUpload() {
 
       toast({
         variant: "destructive",
-        title: "Erro nos ajustes",
+        title: "Erro no processamento",
         description: errorMessage
       })
-
-      await UploadAPI.log(analysisResult.dataset_id, 'error', errorMessage)
-      await UploadAPI.updateDatasetStatus(analysisResult.dataset_id, 'error')
+    } finally {
+      setIsUploading(false)
     }
-  }, [analysisResult, processDataset, toast, updateProgress])
+  }, [analysisResult, toast, updateProgress])
 
-  const loadLogs = useCallback(async (datasetId: string): Promise<void> => {
+  const loadLogs = useCallback(async (datasetId: string) => {
     try {
-      const logsData = await UploadAPI.getLogs(datasetId)
-      setLogs(logsData)
+      const response = await fetch(`/api/upload/logs?dataset_id=${datasetId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setLogs(data.logs || [])
+      }
     } catch (error) {
       console.error('Erro ao carregar logs:', error)
     }

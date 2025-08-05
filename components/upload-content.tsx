@@ -88,7 +88,6 @@ export function UploadContent() {
     
     setShowDataTypeSelector(false)
     
-    // Passar configurações de coleção e upload fluido
     await confirmWithAdjustments(adjustments, selectedFile, {
       uploadMode,
       fluidConfig: uploadMode.type === 'fluid' ? fluidConfig : undefined
@@ -103,7 +102,6 @@ export function UploadContent() {
 
   const handleModeChange = (mode: UploadMode) => {
     setUploadMode(mode)
-    // Reset configurações fluidas se não for upload fluido
     if (mode.type !== 'fluid') {
       setFluidConfig(null)
     }

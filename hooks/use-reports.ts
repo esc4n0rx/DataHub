@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { ReportsAPI } from '@/lib/reports-api'
 import { ExcelExporter } from '@/lib/excel-export'
 import { DatasetWithDetails, DatasetFilters, PaginationState } from '@/types/reports'
-import { ReportsOverview, ReportsView, ReportsNavigation, CollectionWithStats } from '@/types/reports-enhanced'
+import { ReportsOverview, ReportsView, ReportsNavigation, CollectionWithStats, IndividualDataset } from '@/types/reports-enhanced'
 import { useToast } from '@/hooks/use-toast'
 
 export function useReports() {
@@ -134,31 +134,36 @@ export function useReports() {
     } finally {
       setLoading(false)
     }
-  }, [navigation.path, currentView.type, pagination.page, pagination.pageSize, filters.search, filters.column, toast])
+  }, [overview, toast, navigation, currentView, pagination, filters])
 
   const navigateToOverview = useCallback(() => {
     setCurrentView({ type: 'overview' })
     setSelectedCollection(null)
-    setCollectionDatasets([])
     setSelectedDataset(null)
-    setNavigation({ path: [{ type: 'overview', name: 'Relatórios' }] })
-    setFilters({ search: '', column: null, sortBy: null, sortOrder: 'asc' })
-    setPagination({ page: 1, pageSize: 50, total: 0 })
+    setCollectionDatasets([])
+    setNavigation({
+      path: [{ type: 'overview', name: 'Relatórios' }]
+    })
   }, [])
 
   const navigateBack = useCallback(() => {
-    if (currentView.type === 'dataset') {
-      if (currentView.collection_id) {
-        // Voltar para a coleção
-        navigateToCollection(currentView.collection_id)
-      } else {
-        // Voltar para overview (dataset individual)
-        navigateToOverview()
-      }
-    } else if (currentView.type === 'collection') {
+    const currentPath = navigation.path
+    if (currentPath.length <= 1) {
       navigateToOverview()
+      return
     }
-  }, [currentView, navigateToCollection, navigateToOverview])
+
+    const previousPath = currentPath[currentPath.length - 2]
+    const newPath = currentPath.slice(0, -1)
+
+    setNavigation({ path: newPath })
+
+    if (previousPath.type === 'overview') {
+      navigateToOverview()
+    } else if (previousPath.type === 'collection' && previousPath.id) {
+      navigateToCollection(previousPath.id)
+    }
+  }, [navigation, navigateToOverview, navigateToCollection])
 
   const deleteCollection = useCallback(async (collectionId: string): Promise<boolean> => {
     try {
@@ -173,8 +178,8 @@ export function useReports() {
       // Recarregar overview
       await loadOverview()
       
-      // Se estava visualizando a coleção excluída, voltar para overview
-      if (currentView.collection_id === collectionId) {
+      // Se estava visualizando a coleção excluída, voltar ao overview
+      if (currentView.type === 'collection' && currentView.collection_id === collectionId) {
         navigateToOverview()
       }
       
@@ -190,7 +195,7 @@ export function useReports() {
     } finally {
       setLoading(false)
     }
-  }, [toast, loadOverview, currentView.collection_id, navigateToOverview])
+  }, [toast, loadOverview, currentView, navigateToOverview])
 
   const deleteDataset = useCallback(async (datasetId: string): Promise<boolean> => {
     try {
@@ -221,7 +226,7 @@ export function useReports() {
       }
       
       // Se estava visualizando o dataset excluído, voltar
-      if (currentView.dataset_id === datasetId) {
+      if (currentView.type === 'dataset' && currentView.dataset_id === datasetId) {
         navigateBack()
       }
       
@@ -270,8 +275,10 @@ export function useReports() {
     try {
       setLoading(true)
       
-      // Encontrar o dataset (pode estar em overview.individual_datasets ou collectionDatasets)
-      let dataset = overview?.individual_datasets.find(d => d.id === datasetId)
+      // Buscar o dataset (pode estar em overview.individual_datasets ou collectionDatasets)
+      let dataset: IndividualDataset | DatasetWithDetails | undefined = 
+        overview?.individual_datasets.find(d => d.id === datasetId)
+      
       if (!dataset) {
         dataset = collectionDatasets.find(d => d.id === datasetId)
       }
