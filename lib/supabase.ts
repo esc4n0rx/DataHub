@@ -5,7 +5,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
-// Configurar usuário atual para RLS
+
 export const setCurrentUser = (userId: string) => {
   return supabase.rpc('set_config', {
     setting_name: 'app.current_user_id',
@@ -14,10 +14,11 @@ export const setCurrentUser = (userId: string) => {
   })
 }
 
+
 export type Database = {
   public: {
     Tables: {
-      // Nova tabela para coleções
+      // Tabelas existentes
       collections: {
         Row: {
           id: string
@@ -45,7 +46,6 @@ export type Database = {
           status: 'analyzing' | 'pending_adjustment' | 'confirmed' | 'error'
           created_at: string
           updated_at: string
-          // Novos campos
           collection_id: string | null
           is_current: boolean
           version: number
@@ -89,6 +89,58 @@ export type Database = {
         }
         Insert: Omit<Database['public']['Tables']['upload_logs']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['upload_logs']['Insert']>
+      }
+      // Tabelas de integrações (sem user_id)
+      integrations: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          type: 'manual' | 'scheduled' | 'api'
+          status: 'active' | 'inactive' | 'error'
+          source_system: string
+          target_collection_id: string | null
+          file_pattern: string
+          schedule_cron: string | null
+          api_key: string
+          webhook_url: string
+          file_retention_days: number
+          created_at: string
+          updated_at: string
+          last_run_at: string | null
+          next_run_at: string | null
+        }
+        Insert: Omit<Database['public']['Tables']['integrations']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['integrations']['Insert']>
+      }
+      integration_runs: {
+        Row: {
+          id: string
+          integration_id: string
+          status: 'running' | 'completed' | 'failed'
+          file_name: string | null
+          file_size: number | null
+          records_processed: number | null
+          error_message: string | null
+          started_at: string
+          completed_at: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['integration_runs']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['integration_runs']['Insert']>
+      }
+      integration_logs: {
+        Row: {
+          id: string
+          integration_id: string
+          run_id: string | null
+          level: 'info' | 'warning' | 'error'
+          message: string
+          details: Record<string, any> | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['integration_logs']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['integration_logs']['Insert']>
       }
     }
   }

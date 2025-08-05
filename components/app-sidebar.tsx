@@ -1,6 +1,6 @@
 "use client"
 
-import { Building2, BarChart3, Upload, FileText, History, Settings } from "lucide-react"
+import { Building2, BarChart3, Upload, FileText, History, Settings, Zap } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -29,6 +29,11 @@ const menuItems = [
     title: "Relatórios",
     icon: FileText,
     id: "reports" as ActivePage,
+  },
+  {
+    title: "Integrações",
+    icon: Zap,
+    id: "integrations" as ActivePage,
   },
   {
     title: "Histórico",

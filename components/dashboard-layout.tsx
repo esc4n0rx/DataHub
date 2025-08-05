@@ -8,8 +8,9 @@ import { UploadContent } from "@/components/upload-content"
 import { ReportsContent } from "@/components/reports-content"
 import { HistoryContent } from "@/components/history-content"
 import { SettingsContent } from "@/components/settings-content"
+import { IntegrationsContent } from "@/components/integrations-content"
 
-export type ActivePage = "dashboard" | "upload" | "reports" | "history" | "settings"
+export type ActivePage = "dashboard" | "upload" | "reports" | "history" | "settings" | "integrations"
 
 export function DashboardLayout() {
   const [activePage, setActivePage] = useState<ActivePage>("dashboard")
@@ -26,6 +27,8 @@ export function DashboardLayout() {
         return <HistoryContent />
       case "settings":
         return <SettingsContent />
+      case "integrations":
+        return <IntegrationsContent />
       default:
         return <DashboardContent />
     }

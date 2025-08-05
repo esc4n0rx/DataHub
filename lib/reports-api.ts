@@ -4,15 +4,15 @@ import { CollectionWithStats, IndividualDataset, ReportsOverview } from '@/types
 import { getStoredAuthData } from './auth'
 
 export class ReportsAPI {
-  private static async ensureAuth(): Promise<string> {
-    const authData = getStoredAuthData()
+private static async ensureAuth(): Promise<string> {
+   const authData = getStoredAuthData()
     if (!authData?.user) {
-      throw new Error('Usuário não autenticado')
-    }
+    throw new Error('Usuário não autenticado')
+   }
     
-    await setCurrentUser(authData.user.id)
+  await setCurrentUser(authData.user.id)
     return authData.user.id
-  }
+   }
 
   static async getReportsOverview(): Promise<ReportsOverview> {
     await this.ensureAuth()
@@ -115,7 +115,6 @@ export class ReportsAPI {
   static async deleteCollection(collectionId: string): Promise<void> {
     await this.ensureAuth()
 
-    // Verificar se há datasets na coleção
     const { data: datasets } = await supabase
       .from('datasets')
       .select('id')
@@ -187,7 +186,7 @@ export class ReportsAPI {
     search?: string,
     column?: string
   ): Promise<{ rows: DatasetRowData[], total: number }> {
-    await this.ensureAuth()
+   await this.ensureAuth()
 
     let query = supabase
       .from('dataset_rows')
