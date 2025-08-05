@@ -1,3 +1,4 @@
+// components/integrations/CreateIntegrationModal.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -25,8 +26,9 @@ import { Badge } from "@/components/ui/badge"
 import { CreateIntegrationData } from "@/types/integrations"
 import { Collection } from "@/types/collections"
 import { CollectionsAPI } from "@/lib/collections-api"
-import { Clock, Zap, Database, Copy, ExternalLink } from "lucide-react"
+import { Clock, Zap, Database, Copy, ExternalLink, ArrowLeft, ArrowRight } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { UploadTypeSelector } from "./UploadTypeSelector"
 
 interface CreateIntegrationModalProps {
   isOpen: boolean
@@ -76,7 +78,13 @@ export function CreateIntegrationModal({ isOpen, onClose, onConfirm, loading }: 
     target_collection_id: '',
     file_pattern: '*',
     schedule_cron: '',
-    file_retention_days: 7
+    file_retention_days: 7,
+    upload_type: 'dataset',
+    dataset_name_pattern: '',
+    fluid_config: {
+      preserve_schema: false,
+      backup_previous: true
+    }
   })
   const [collections, setCollections] = useState<Collection[]>([])
   const [step, setStep] = useState(1)
@@ -90,6 +98,11 @@ export function CreateIntegrationModal({ isOpen, onClose, onConfirm, loading }: 
       setCollections(data)
     } catch (error) {
       console.error('Erro ao carregar coleções:', error)
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar coleções",
+        variant: "destructive"
+      })
     } finally {
       setLoadingCollections(false)
     }
@@ -107,12 +120,23 @@ export function CreateIntegrationModal({ isOpen, onClose, onConfirm, loading }: 
         target_collection_id: '',
         file_pattern: '*',
         schedule_cron: '',
-        file_retention_days: 7
+        file_retention_days: 7,
+        upload_type: 'dataset',
+        dataset_name_pattern: '',
+        fluid_config: {
+          preserve_schema: false,
+          backup_previous: true
+        }
       })
     }
   }, [isOpen])
 
+  const handleFormDataChange = (updates: Partial<CreateIntegrationData>) => {
+    setFormData(prev => ({ ...prev, ...updates }))
+  }
+
   const handleSubmit = () => {
+    // Validações básicas
     if (!formData.name.trim()) {
       toast({
         title: "Erro",
@@ -131,7 +155,24 @@ export function CreateIntegrationModal({ isOpen, onClose, onConfirm, loading }: 
       return
     }
 
-    onConfirm(formData)
+    // Validações específicas do tipo de upload
+    if ((formData.upload_type === 'collection' || formData.upload_type === 'fluid') && 
+        !formData.target_collection_id) {
+      toast({
+        title: "Erro",
+        description: "Selecione uma coleção de destino",
+        variant: "destructive"
+      })
+      return
+    }
+
+    // Se não tem padrão de nome, usar o nome da integração
+    const finalData = {
+      ...formData,
+      dataset_name_pattern: formData.dataset_name_pattern || formData.name
+    }
+
+    onConfirm(finalData)
   }
 
   const generateWebhookUrl = () => {
@@ -170,244 +211,359 @@ pause`
     })
   }
 
+  const canProceedToStep2 = () => {
+    return formData.name.trim() && 
+           formData.source_system.trim() && 
+           formData.type
+  }
+
+  const getStepTitle = () => {
+    switch (step) {
+      case 1: return "Informações Básicas"
+      case 2: return "Configurações de Upload"
+      case 3: return "Configurações Técnicas"
+      default: return "Nova Integração"
+    }
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nova Integração</DialogTitle>
+          <DialogTitle className="flex items-center space-x-2">
+            <span>Nova Integração</span>
+            <Badge variant="outline">Passo {step} de 3</Badge>
+          </DialogTitle>
           <DialogDescription>
-            Configure uma nova integração para automatizar o envio de dados
+            {getStepTitle()}
           </DialogDescription>
         </DialogHeader>
 
-        {step === 1 && (
-          <div className="space-y-6">
-            {/* Informações Básicas */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome da Integração</Label>
-                <Input
-                  id="name"
-                  placeholder="Ex: Dados SAP Vendas"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Descrição (opcional)</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Descreva o que esta integração faz..."
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tipo de Integração</Label>
-                <div className="grid gap-3">
-                  {INTEGRATION_TYPES.map((type) => {
-                    const Icon = type.icon
-                    return (
-                      <Card
-                        key={type.value}
-                        className={`cursor-pointer transition-all ${
-                          formData.type === type.value
-                            ? 'ring-2 ring-primary bg-primary/5'
-                            : 'hover:bg-muted/50'
-                        }`}
-                        onClick={() => setFormData({ ...formData, type: type.value as any })}
+        <div className="space-y-6">
+          {/* Passo 1: Informações Básicas */}
+          {step === 1 && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Informações da Integração</CardTitle>
+                  <CardDescription>
+                    Configure as informações básicas da integração
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Nome da Integração *</Label>
+                      <Input
+                        id="name"
+                        placeholder="Ex: Importação SAP Vendas"
+                        value={formData.name}
+                        onChange={(e) => handleFormDataChange({ name: e.target.value })}
+                        disabled={loading}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="source_system">Sistema de Origem *</Label>
+                      <Select
+                        value={formData.source_system}
+                        onValueChange={(value) => handleFormDataChange({ source_system: value })}
+                        disabled={loading}
                       >
-                        <CardHeader className="pb-2">
-                          <CardTitle className="flex items-center space-x-2 text-sm">
-                            <Icon className="h-4 w-4" />
-                            <span>{type.label}</span>
-                          </CardTitle>
-                          <CardDescription className="text-xs">
-                            {type.description}
-                          </CardDescription>
-                        </CardHeader>
-                      </Card>
-                    )
-                  })}
-                </div>
-              </div>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o sistema" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SOURCE_SYSTEMS.map(system => (
+                            <SelectItem key={system.value} value={system.value}>
+                              {system.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Descrição (opcional)</Label>
+                    <Textarea
+                      id="description"
+                      placeholder="Descreva o propósito desta integração..."
+                      value={formData.description}
+                      onChange={(e) => handleFormDataChange({ description: e.target.value })}
+                      disabled={loading}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Tipo de Integração</CardTitle>
+                  <CardDescription>
+                    Como a integração será executada
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3">
+                    {INTEGRATION_TYPES.map((type) => {
+                      const Icon = type.icon
+                      const isSelected = formData.type === type.value
+                      
+                      return (
+                        <div
+                          key={type.value}
+                          className={`
+                            p-4 border rounded-lg cursor-pointer transition-all
+                            ${isSelected 
+                              ? 'border-primary bg-primary/5' 
+                              : 'border-border hover:border-primary/50'
+                            }
+                            ${loading ? 'opacity-50 cursor-not-allowed' : ''}
+                          `}
+                          onClick={() => !loading && handleFormDataChange({ type: type.value as any })}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className={`w-4 h-4 rounded-full border-2 ${
+                              isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'
+                            }`} />
+                            <Icon className="h-5 w-5" />
+                            <div className="flex-1">
+                              <div className="font-medium">{type.label}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {type.description}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </div>
-        )}
+          )}
 
-        {step === 2 && (
-          <div className="space-y-6">
-            {/* Configurações Técnicas */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="source_system">Sistema de Origem</Label>
-                <Select 
-                  value={formData.source_system} 
-                  onValueChange={(value) => setFormData({ ...formData, source_system: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o sistema..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SOURCE_SYSTEMS.map((system) => (
-                      <SelectItem key={system.value} value={system.value}>
-                        {system.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          {/* Passo 2: Configurações de Upload */}
+          {step === 2 && (
+            <UploadTypeSelector
+              formData={formData}
+              onChange={handleFormDataChange}
+              collections={collections}
+              disabled={loading || loadingCollections}
+            />
+          )}
 
-              <div className="space-y-2">
-                <Label htmlFor="target_collection">Coleção de Destino (opcional)</Label>
-                <Select 
-                  value={formData.target_collection_id || 'none'} 
-                  onValueChange={(value) => setFormData({ 
-                    ...formData, 
-                    target_collection_id: value === 'none' ? '' : value 
-                  })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione uma coleção..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma (criar automaticamente)</SelectItem>
-                    {collections.map((collection) => (
-                      <SelectItem key={collection.id} value={collection.id}>
-                        {collection.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          {/* Passo 3: Configurações Técnicas */}
+          {step === 3 && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Configurações Técnicas</CardTitle>
+                  <CardDescription>
+                    Ajustes avançados da integração
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="file_pattern">Padrão de Arquivo</Label>
+                      <Input
+                        id="file_pattern"
+                        placeholder="*.csv ou vendas_*.xlsx"
+                        value={formData.file_pattern}
+                        onChange={(e) => handleFormDataChange({ file_pattern: e.target.value })}
+                        disabled={loading}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use * para qualquer caractere. Ex: dados_*.csv
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="retention">Retenção de Arquivos (dias)</Label>
+                      <Input
+                        id="retention"
+                        type="number"
+                        min="1"
+                        max="365"
+                        value={formData.file_retention_days}
+                        onChange={(e) => handleFormDataChange({ 
+                          file_retention_days: parseInt(e.target.value) || 7 
+                        })}
+                        disabled={loading}
+                      />
+                    </div>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="file_pattern">Padrão de Arquivos</Label>
-                <Input
-                  id="file_pattern"
-                  placeholder="Ex: *.csv, dados_*.xlsx"
-                  value={formData.file_pattern}
-                  onChange={(e) => setFormData({ ...formData, file_pattern: e.target.value })}
-                />
-              </div>
+                  {formData.type === 'scheduled' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="schedule">Agendamento (Cron)</Label>
+                      <Input
+                        id="schedule"
+                        placeholder="0 9 * * 1-5 (Segunda a sexta às 9h)"
+                        value={formData.schedule_cron}
+                        onChange={(e) => handleFormDataChange({ schedule_cron: e.target.value })}
+                        disabled={loading}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Formato cron: minuto hora dia mês dia-da-semana
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-              {formData.type === 'scheduled' && (
-                <div className="space-y-2">
-                  <Label htmlFor="schedule_cron">Agendamento (Cron)</Label>
-                  <Input
-                    id="schedule_cron"
-                    placeholder="Ex: 0 8 * * * (todo dia às 8h)"
-                    value={formData.schedule_cron}
-                    onChange={(e) => setFormData({ ...formData, schedule_cron: e.target.value })}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Use formato cron padrão. Exemplos: "0 8 * * *" (8h diário), "0 */2 * * *" (a cada 2h)
-                  </p>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="retention">Retenção de Arquivos (dias)</Label>
-                <Select 
-                  value={formData.file_retention_days.toString()} 
-                  onValueChange={(value) => setFormData({ ...formData, file_retention_days: parseInt(value) })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 dia</SelectItem>
-                    <SelectItem value="3">3 dias</SelectItem>
-                    <SelectItem value="7">7 dias</SelectItem>
-                    <SelectItem value="15">15 dias</SelectItem>
-                    <SelectItem value="30">30 dias</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="space-y-6">
-            {/* Resumo e Instruções */}
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Resumo da Integração</h3>
+              {formData.type === 'api' && (
                 <Card>
-                  <CardContent className="pt-4 space-y-2">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Nome:</span>
-                        <p className="font-medium">{formData.name}</p>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Zap className="h-5 w-5" />
+                      <span>Configuração de Webhook</span>
+                    </CardTitle>
+                    <CardDescription>
+                      URL e exemplo de código para integração via API
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="p-4 bg-muted rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <Label className="text-sm font-medium">URL do Webhook</Label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(generateWebhookUrl())
+                            toast({ title: "URL copiada!" })
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Tipo:</span>
-                        <p className="font-medium capitalize">{formData.type}</p>
+                      <code className="text-sm bg-background p-2 rounded block">
+                        {generateWebhookUrl()}
+                      </code>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        A API Key será gerada após criar a integração
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <Label className="text-sm font-medium">Script de Exemplo (Windows)</Label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={copyExampleScript}
+                        >
+                          <Copy className="h-4 w-4 mr-2" />
+                          Copiar
+                        </Button>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Sistema:</span>
-                        <p className="font-medium">{formData.source_system}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Retenção:</span>
-                        <p className="font-medium">{formData.file_retention_days} dias</p>
+                      <div className="bg-muted p-4 rounded-lg text-sm">
+                        <pre className="whitespace-pre-wrap text-xs">
+{`@echo off
+echo Executando integração ${formData.name}...
+
+REM Executar seu script de extração aqui
+curl -X POST "${generateWebhookUrl()}" \\
+     -H "Authorization: Bearer [API_KEY]" \\
+     -F "file=@dados.csv" \\
+     -F "source=${formData.source_system}"
+
+echo ✅ Arquivo enviado!`}
+                        </pre>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-              </div>
-
-              {formData.type === 'api' && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Como Usar</h3>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Script de Exemplo</CardTitle>
-                      <CardDescription>
-                        Use este script como base para enviar arquivos automaticamente
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="bg-muted p-3 rounded-lg font-mono text-xs overflow-x-auto">
-                        <pre>{`curl -X POST "${generateWebhookUrl()}" \\
-     -H "Authorization: Bearer [API_KEY]" \\
-     -F "file=@seu_arquivo.csv" \\
-     -F "source=${formData.source_system}"`}</pre>
-                      </div>
-                      <Button variant="outline" size="sm" onClick={copyExampleScript}>
-                        <Copy className="h-4 w-4 mr-2" />
-                        Copiar Script Completo
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </div>
               )}
+
+              {/* Resumo da Configuração */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Resumo da Configuração</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid gap-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Nome:</span>
+                      <span className="font-medium">{formData.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tipo:</span>
+                      <Badge variant="outline">
+                        {INTEGRATION_TYPES.find(t => t.value === formData.type)?.label}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Sistema:</span>
+                      <span className="font-medium">{formData.source_system}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Upload:</span>
+                      <Badge variant="outline">
+                        {formData.upload_type === 'dataset' && 'Dataset Individual'}
+                        {formData.upload_type === 'collection' && 'Adicionar à Coleção'}
+                        {formData.upload_type === 'fluid' && 'Upload Fluido'}
+                      </Badge>
+                    </div>
+                    {formData.target_collection_id && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Coleção:</span>
+                        <span className="font-medium">
+                          {collections.find(c => c.id === formData.target_collection_id)?.name}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Padrão do Nome:</span>
+                      <span className="font-medium">
+                        {formData.dataset_name_pattern || formData.name}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <DialogFooter className="flex justify-between">
           <div className="flex space-x-2">
             {step > 1 && (
-              <Button variant="outline" onClick={() => setStep(step - 1)}>
+              <Button
+                variant="outline"
+                onClick={() => setStep(step - 1)}
+                disabled={loading}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
                 Anterior
               </Button>
             )}
           </div>
+          
           <div className="flex space-x-2">
-            <Button variant="outline" onClick={onClose}>
+            <Button
+              variant="outline"
+              onClick={onClose}
+              disabled={loading}
+            >
               Cancelar
             </Button>
+            
             {step < 3 ? (
-              <Button onClick={() => setStep(step + 1)}>
+              <Button
+                onClick={() => setStep(step + 1)}
+                disabled={loading || (step === 1 && !canProceedToStep2())}
+              >
                 Próximo
+                <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             ) : (
-              <Button onClick={handleSubmit} disabled={loading}>
-                {loading ? 'Criando...' : 'Criar Integração'}
+              <Button
+                onClick={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? "Criando..." : "Criar Integração"}
               </Button>
             )}
           </div>

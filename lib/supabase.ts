@@ -15,18 +15,18 @@ export const setCurrentUser = (userId: string) => {
 }
 
 
-export type Database = {
+export interface Database {
   public: {
     Tables: {
-      // Tabelas existentes
       collections: {
         Row: {
           id: string
-          user_id: string
           name: string
           description: string | null
-          category: string
           is_fluid: boolean
+          dataset_count: number
+          total_rows: number
+          last_upload: string | null
           created_at: string
           updated_at: string
         }
@@ -36,19 +36,18 @@ export type Database = {
       datasets: {
         Row: {
           id: string
-          user_id: string
           name: string
           description: string | null
           file_name: string
           file_size: number
           total_rows: number
           total_columns: number
-          status: 'analyzing' | 'pending_adjustment' | 'confirmed' | 'error'
-          created_at: string
-          updated_at: string
+          status: 'pending' | 'analyzing' | 'analyzed' | 'confirmed' | 'error'
           collection_id: string | null
           is_current: boolean
-          version: number
+          version: number | null
+          created_at: string
+          updated_at: string
         }
         Insert: Omit<Database['public']['Tables']['datasets']['Row'], 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Database['public']['Tables']['datasets']['Insert']>
@@ -90,7 +89,7 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['upload_logs']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['upload_logs']['Insert']>
       }
-      // Tabelas de integrações (sem user_id)
+      // Tabelas de integrações (ATUALIZADAS)
       integrations: {
         Row: {
           id: string
@@ -109,6 +108,13 @@ export type Database = {
           updated_at: string
           last_run_at: string | null
           next_run_at: string | null
+          // NOVOS CAMPOS
+          upload_type: 'dataset' | 'collection' | 'fluid'
+          dataset_name_pattern: string | null
+          fluid_config: {
+            preserve_schema: boolean
+            backup_previous: boolean
+          } | null
         }
         Insert: Omit<Database['public']['Tables']['integrations']['Row'], 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Database['public']['Tables']['integrations']['Insert']>
@@ -125,6 +131,8 @@ export type Database = {
           started_at: string
           completed_at: string | null
           created_at: string
+          dataset_id: string | null
+          collection_id: string | null
         }
         Insert: Omit<Database['public']['Tables']['integration_runs']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['integration_runs']['Insert']>

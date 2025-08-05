@@ -1,3 +1,4 @@
+// lib/integrations-api.ts (CORRIGIDO)
 import { supabase } from './supabase'
 import { 
   Integration, 
@@ -25,7 +26,11 @@ export class IntegrationsAPI {
       api_key: apiKey,
       webhook_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/integrations/webhook/${apiKey}`,
       file_retention_days: data.file_retention_days,
-      status: 'active'
+      status: 'active',
+      // Novos campos
+      upload_type: data.upload_type,
+      dataset_name_pattern: data.dataset_name_pattern || null,
+      fluid_config: data.fluid_config || null
     }
 
     console.log('Inserindo integração:', insertData)
@@ -102,10 +107,13 @@ export class IntegrationsAPI {
     return data
   }
 
-  static async updateIntegration(id: string, updates: Partial<Integration>): Promise<void> {
+  static async updateIntegration(id: string, updates: Partial<CreateIntegrationData>): Promise<void> {
     const { error } = await supabase
       .from('integrations')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', id)
 
     if (error) {
@@ -124,8 +132,35 @@ export class IntegrationsAPI {
     }
   }
 
+  static async toggleIntegrationStatus(id: string): Promise<void> {
+    // Buscar status atual
+    const { data: integration, error: fetchError } = await supabase
+      .from('integrations')
+      .select('status')
+      .eq('id', id)
+      .single()
+
+    if (fetchError) {
+      throw new Error(`Erro ao buscar integração: ${fetchError.message}`)
+    }
+
+    const newStatus = integration.status === 'active' ? 'inactive' : 'active'
+
+    const { error } = await supabase
+      .from('integrations')
+      .update({ 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+
+    if (error) {
+      throw new Error(`Erro ao alterar status: ${error.message}`)
+    }
+  }
+
   // Execuções
-  static async getIntegrationRuns(integrationId: string, limit: number = 50): Promise<IntegrationRun[]> {
+  static async getIntegrationRuns(integrationId: string, limit = 50): Promise<IntegrationRun[]> {
     const { data, error } = await supabase
       .from('integration_runs')
       .select('*')
@@ -140,45 +175,26 @@ export class IntegrationsAPI {
     return data || []
   }
 
-  static async createIntegrationRun(integrationId: string, fileName?: string, fileSize?: number): Promise<string> {
+  static async getIntegrationRun(runId: string): Promise<IntegrationRun | null> {
     const { data, error } = await supabase
       .from('integration_runs')
-      .insert({
-        integration_id: integrationId,
-        status: 'running',
-        file_name: fileName || null,
-        file_size: fileSize || null,
-        started_at: new Date().toISOString()
-      })
-      .select('id')
+      .select('*')
+      .eq('id', runId)
       .single()
 
     if (error) {
-      throw new Error(`Erro ao criar execução: ${error.message}`)
+      if (error.code === 'PGRST116') return null
+      throw new Error(`Erro ao buscar execução: ${error.message}`)
     }
 
-    return data.id
-  }
-
-  static async updateIntegrationRun(
-    runId: string, 
-    updates: Partial<IntegrationRun>
-  ): Promise<void> {
-    const { error } = await supabase
-      .from('integration_runs')
-      .update(updates)
-      .eq('id', runId)
-
-    if (error) {
-      throw new Error(`Erro ao atualizar execução: ${error.message}`)
-    }
+    return data
   }
 
   // Logs
   static async getIntegrationLogs(
     integrationId: string, 
     runId?: string, 
-    limit: number = 100
+    limit = 100
   ): Promise<IntegrationLog[]> {
     let query = supabase
       .from('integration_logs')
@@ -200,79 +216,56 @@ export class IntegrationsAPI {
     return data || []
   }
 
-  static async createIntegrationLog(
-    integrationId: string,
-    level: 'info' | 'warning' | 'error',
-    message: string,
-    runId?: string,
-    details?: Record<string, any>
-  ): Promise<void> {
-    const { error } = await supabase
-      .from('integration_logs')
-      .insert({
-        integration_id: integrationId,
-        run_id: runId || null,
-        level,
-        message,
-        details: details || null
-      })
-
-    if (error) {
-      throw new Error(`Erro ao criar log: ${error.message}`)
-    }
-  }
-
-  // Estatísticas  
+  // Estatísticas (CORRIGIDO para incluir failed_runs_today)
   static async getIntegrationStats(): Promise<IntegrationStats> {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const todayIso = today.toISOString()
+    const today = new Date().toISOString().split('T')[0]
 
     try {
-      // Buscar integrações
-      const { data: integrations } = await supabase
+      // Total de integrações
+      const { count: totalIntegrations } = await supabase
         .from('integrations')
-        .select('status')
+        .select('*', { count: 'exact', head: true })
 
-      // Buscar execuções de hoje
-      const { data: runsToday } = await supabase
+      // Integrações ativas
+      const { count: activeIntegrations } = await supabase
+        .from('integrations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'active')
+
+      // Execuções de hoje
+      const { data: todayRuns } = await supabase
         .from('integration_runs')
         .select('status, records_processed')
-        .gte('created_at', todayIso)
+        .gte('created_at', `${today}T00:00:00`)
 
-      // Buscar todas as execuções para totais
-      const { data: allRuns } = await supabase
+      // Todas as execuções completas para total de arquivos
+      const { count: totalFilesProcessed } = await supabase
         .from('integration_runs')
-        .select('records_processed')
+        .select('*', { count: 'exact', head: true })
         .eq('status', 'completed')
 
-      const totalIntegrations = integrations?.length || 0
-      const activeIntegrations = integrations?.filter(i => i.status === 'active').length || 0
-      const totalRunsToday = runsToday?.length || 0
-      const successfulRunsToday = runsToday?.filter(r => r.status === 'completed').length || 0
-      const failedRunsToday = runsToday?.filter(r => r.status === 'failed').length || 0
-      const totalFilesProcessed = allRuns?.length || 0
-      const totalRecordsProcessed = allRuns?.reduce((sum, run) => sum + (run.records_processed || 0), 0) || 0
+      const totalRunsToday = todayRuns?.length || 0
+      const successfulRunsToday = todayRuns?.filter(r => r.status === 'completed').length || 0
+      const failedRunsToday = todayRuns?.filter(r => r.status === 'failed').length || 0
+      const totalRecordsProcessed = todayRuns?.reduce((sum, run) => sum + (run.records_processed || 0), 0) || 0
 
       return {
-        total_integrations: totalIntegrations,
-        active_integrations: activeIntegrations,
+        total_integrations: totalIntegrations || 0,
+        active_integrations: activeIntegrations || 0,
         total_runs_today: totalRunsToday,
         successful_runs_today: successfulRunsToday,
-        failed_runs_today: failedRunsToday,
-        total_files_processed: totalFilesProcessed,
-        total_records_processed: totalRecordsProcessed
+        failed_runs_today: failedRunsToday, 
+        total_records_processed: totalFilesProcessed || 0
       }
     } catch (error) {
       console.error('Erro ao buscar estatísticas:', error)
-      // Retornar estatísticas vazias em caso de erro
+
       return {
         total_integrations: 0,
         active_integrations: 0,
         total_runs_today: 0,
         successful_runs_today: 0,
-        failed_runs_today: 0,
-        total_files_processed: 0,
+        failed_runs_today: 0, 
         total_records_processed: 0
       }
     }

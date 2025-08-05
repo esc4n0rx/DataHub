@@ -1,3 +1,24 @@
+import { ReactNode } from "react"
+
+// types/integrations.ts
+export interface CreateIntegrationData {
+  name: string
+  description?: string
+  type: 'manual' | 'scheduled' | 'api'
+  source_system: string
+  target_collection_id?: string
+  file_pattern: string
+  schedule_cron?: string
+  file_retention_days: number
+  // Novos campos para tipo de upload
+  upload_type: 'dataset' | 'collection' | 'fluid'
+  dataset_name_pattern?: string // Ex: "Vendas_{date}" ou "Estoque_Atual"
+  fluid_config?: {
+    preserve_schema: boolean
+    backup_previous: boolean
+  }
+}
+
 export interface Integration {
   id: string
   name: string
@@ -15,6 +36,21 @@ export interface Integration {
   updated_at: string
   last_run_at: string | null
   next_run_at: string | null
+  // Novos campos
+  upload_type: 'dataset' | 'collection' | 'fluid'
+  dataset_name_pattern: string | null
+  fluid_config: {
+    preserve_schema: boolean
+    backup_previous: boolean
+  } | null
+}
+
+export interface IntegrationWithStats extends Integration {
+  total_runs: number
+  successful_runs: number
+  failed_runs: number
+  last_success_at: string | null
+  last_error_at: string | null
 }
 
 export interface IntegrationRun {
@@ -28,6 +64,9 @@ export interface IntegrationRun {
   started_at: string
   completed_at: string | null
   created_at: string
+  // Novos campos
+  dataset_id: string | null
+  collection_id: string | null
 }
 
 export interface IntegrationLog {
@@ -40,31 +79,11 @@ export interface IntegrationLog {
   created_at: string
 }
 
-export interface CreateIntegrationData {
-  name: string
-  description?: string
-  type: 'manual' | 'scheduled' | 'api'
-  source_system: string
-  target_collection_id?: string
-  file_pattern: string
-  schedule_cron?: string
-  file_retention_days: number
-}
-
 export interface IntegrationStats {
+  failed_runs_today: ReactNode
   total_integrations: number
   active_integrations: number
   total_runs_today: number
   successful_runs_today: number
-  failed_runs_today: number
-  total_files_processed: number
   total_records_processed: number
-}
-
-export interface IntegrationWithStats extends Integration {
-  total_runs: number
-  successful_runs: number
-  failed_runs: number
-  last_success_at: string | null
-  last_error_at: string | null
 }
