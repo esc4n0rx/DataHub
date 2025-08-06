@@ -1,3 +1,4 @@
+// components/integrations-content.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -10,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { IntegrationsList } from "@/components/integrations/IntegrationsList"
 import { CreateIntegrationModal } from "@/components/integrations/CreateIntegrationModal"
 import { FileUploadZone } from "@/components/integrations/FileUploadZone"
+import { ConnectorsList } from "@/components/integrations/ConnectorsList"
 import { IntegrationsAPI } from "@/lib/integrations-api"
 import { IntegrationWithStats, IntegrationStats } from "@/types/integrations"
 import { useToast } from "@/hooks/use-toast"
@@ -23,7 +25,8 @@ import {
   Clock, 
   Database,
   TrendingUp,
-  FileText
+  FileText,
+  Zap
 } from "lucide-react"
 
 export function IntegrationsContent() {
@@ -102,7 +105,6 @@ export function IntegrationsContent() {
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active'
     
     try {
-      // Usar o método específico para alterar status
       await IntegrationsAPI.toggleIntegrationStatus(id)
       await loadData()
       toast({
@@ -143,29 +145,40 @@ export function IntegrationsContent() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total de Integrações</CardTitle>
-              <Settings2 className="h-4 w-4 text-muted-foreground" />
+              <Database className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.total_integrations}</div>
-              <p className="text-xs text-muted-foreground">
-                {stats.active_integrations} ativas
-              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Integrações Ativas</CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.active_integrations}</div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Execuções Hoje</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.total_runs_today}</div>
-              <p className="text-xs text-muted-foreground">
-                <span className="text-green-600">{stats.successful_runs_today} sucessos</span>
-                {(stats.failed_runs_today) && (
-                  <span className="text-red-600 ml-2">{stats.failed_runs_today} falhas</span>
+              <div className="flex items-center text-xs text-muted-foreground mt-1">
+                <CheckCircle className="h-3 w-3 text-green-600 mr-1" />
+                {stats.successful_runs_today} sucessos
+                {stats.failed_runs_today && (
+                  <>
+                    <XCircle className="h-3 w-3 text-red-600 ml-2 mr-1" />
+                    {stats.failed_runs_today} falhas
+                  </>
                 )}
-              </p>
+              </div>
             </CardContent>
           </Card>
 
@@ -175,109 +188,83 @@ export function IntegrationsContent() {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats.total_records_processed.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">
-                Total de arquivos
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Taxa de Sucesso</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {stats.total_runs_today > 0 
-                  ? Math.round((stats.successful_runs_today / stats.total_runs_today) * 100)
-                  : 100
-                }%
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Baseado nas execuções de hoje
-              </p>
+              <div className="text-2xl font-bold">{stats.total_records_processed}</div>
             </CardContent>
           </Card>
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
+          <TabsTrigger value="connectors">Conectores</TabsTrigger>
           <TabsTrigger value="upload">Upload Manual</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+        <TabsContent value="overview" className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Integrações Recentes */}
             <Card>
               <CardHeader>
-                <CardTitle>Integrações Recentes</CardTitle>
+                <CardTitle className="flex items-center space-x-2">
+                  <Database className="h-5 w-5" />
+                  <span>Integrações Recentes</span>
+                </CardTitle>
                 <CardDescription>
-                  Atividade das últimas integrações
+                  Últimas integrações criadas
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {loading ? (
-                  <div className="space-y-2">
-                    <div className="h-4 bg-muted rounded animate-pulse" />
-                    <div className="h-4 bg-muted rounded animate-pulse" />
-                    <div className="h-4 bg-muted rounded animate-pulse" />
+                {integrations.slice(0, 5).map((integration) => (
+                  <div key={integration.id} className="flex items-center justify-between py-2">
+                    <div>
+                      <p className="text-sm font-medium">{integration.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {integration.source_system} • {integration.type}
+                      </p>
+                    </div>
+                    <Badge variant={integration.status === 'active' ? 'default' : 'secondary'}>
+                      {integration.status === 'active' ? 'Ativa' : 'Inativa'}
+                    </Badge>
                   </div>
-                ) : integrations.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    Nenhuma integração encontrada
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {integrations.slice(0, 5).map((integration) => (
-                      <div key={integration.id} className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className={`w-2 h-2 rounded-full ${
-                            integration.status === 'active' ? 'bg-green-500' : 'bg-gray-400'
-                          }`} />
-                          <div>
-                            <p className="text-sm font-medium">{integration.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {integration.source_system}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="flex items-center space-x-1">
-                            <CheckCircle className="h-3 w-3 text-green-600" />
-                            <span className="text-xs">{integration.successful_runs}</span>
-                          </div>
-                          {integration.failed_runs > 0 && (
-                            <div className="flex items-center space-x-1">
-                              <XCircle className="h-3 w-3 text-red-600" />
-                              <span className="text-xs">{integration.failed_runs}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                ))}
+                {integrations.length === 0 && (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <Database className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>Nenhuma integração encontrada</p>
                   </div>
                 )}
               </CardContent>
             </Card>
 
+            {/* Ações Rápidas */}
             <Card>
               <CardHeader>
-                <CardTitle>Ações Rápidas</CardTitle>
+                <CardTitle className="flex items-center space-x-2">
+                  <Zap className="h-5 w-5" />
+                  <span>Ações Rápidas</span>
+                </CardTitle>
                 <CardDescription>
-                  Tarefas comuns para gerenciar integrações
+                  Operações frequentes do sistema
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-3">
                 <Button 
                   variant="outline" 
                   className="w-full justify-start"
                   onClick={() => setShowCreateModal(true)}
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Nova Integração
+                  Criar Nova Integração
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => setActiveTab('connectors')}
+                >
+                  <Zap className="h-4 w-4 mr-2" />
+                  Gerenciar Conectores
                 </Button>
                 <Button 
                   variant="outline" 
@@ -287,14 +274,6 @@ export function IntegrationsContent() {
                   <Upload className="h-4 w-4 mr-2" />
                   Upload Manual
                 </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start"
-                  onClick={() => setActiveTab('integrations')}
-                >
-                  <Settings2 className="h-4 w-4 mr-2" />
-                  Gerenciar Integrações
-                </Button>
               </CardContent>
             </Card>
           </div>
@@ -303,23 +282,31 @@ export function IntegrationsContent() {
         <TabsContent value="integrations">
           <IntegrationsList
             integrations={integrations}
-            loading={loading}
-            onRefresh={loadData}
             onDelete={handleDeleteIntegration}
-            onToggleStatus={handleToggleIntegration}
+            onToggle={handleToggleIntegration}
+            loading={loading}
+          />
+        </TabsContent>
+
+        <TabsContent value="connectors">
+          <ConnectorsList
+            integrations={integrations}
+            onRefresh={loadData}
           />
         </TabsContent>
 
         <TabsContent value="upload">
           <Card>
             <CardHeader>
-              <CardTitle>Upload Manual</CardTitle>
+              <CardTitle className="flex items-center space-x-2">
+                <Upload className="h-5 w-5" />
+                <span>Upload Manual</span>
+              </CardTitle>
               <CardDescription>
-                Envie arquivos diretamente para uma integração específica
+                Faça upload de arquivos para suas integrações
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* ✅ Seletor de Integração */}
+            <CardContent>
               {activeIntegrations.length > 0 ? (
                 <>
                   <div className="space-y-2">
@@ -346,7 +333,6 @@ export function IntegrationsContent() {
                     </Select>
                   </div>
 
-                  {/* ✅ FileUploadZone com integrationId */}
                   {selectedIntegrationId && (
                     <FileUploadZone
                       integrationId={selectedIntegrationId}

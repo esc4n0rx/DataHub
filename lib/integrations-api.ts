@@ -1,4 +1,3 @@
-// lib/integrations-api.ts (CORRIGIDO)
 import { supabase } from './supabase'
 import { 
   Integration, 
@@ -62,6 +61,10 @@ export class IntegrationsAPI {
           status,
           completed_at,
           created_at
+        ),
+        integration_connectors (
+          id,
+          is_active
         )
       `)
       .order('created_at', { ascending: false })
@@ -75,6 +78,7 @@ export class IntegrationsAPI {
 
     return data.map(integration => {
       const runs = integration.integration_runs || []
+      const connectors = integration.integration_connectors || []
       const successfulRuns = runs.filter((r: any) => r.status === 'completed')
       const failedRuns = runs.filter((r: any) => r.status === 'failed')
       
@@ -91,7 +95,9 @@ export class IntegrationsAPI {
         failed_runs: failedRuns.length,
         last_success_at: lastSuccess?.completed_at || lastSuccess?.created_at || null,
         last_error_at: lastError?.completed_at || lastError?.created_at || null,
-        integration_runs: undefined // Remove para não poluir
+        connectors_count: connectors.filter((c: any) => c.is_active).length,
+        integration_runs: undefined, // Remove para não poluir
+        integration_connectors: undefined
       }
     })
   }
@@ -152,7 +158,7 @@ export class IntegrationsAPI {
 
     const { error } = await supabase
       .from('integrations')
-      .update({ 
+      .update({
         status: newStatus,
         updated_at: new Date().toISOString()
       })
@@ -179,23 +185,68 @@ export class IntegrationsAPI {
     return data || []
   }
 
-  static async getIntegrationRun(runId: string): Promise<IntegrationRun | null> {
+  static async createIntegrationRun(
+    integrationId: string, 
+    fileName: string | null = null, 
+    fileSize: number | null = null
+  ): Promise<string> {
     const { data, error } = await supabase
       .from('integration_runs')
-      .select('*')
-      .eq('id', runId)
+      .insert({
+        integration_id: integrationId,
+        status: 'running',
+        file_name: fileName,
+        file_size: fileSize,
+        started_at: new Date().toISOString()
+      })
+      .select('id')
       .single()
 
     if (error) {
-      if (error.code === 'PGRST116') return null
-      throw new Error(`Erro ao buscar execução: ${error.message}`)
+      throw new Error(`Erro ao criar execução: ${error.message}`)
     }
 
-    return data
+    return data.id
+  }
+
+  static async updateIntegrationRun(
+    runId: string,
+    updates: Partial<IntegrationRun>
+  ): Promise<void> {
+    const { error } = await supabase
+      .from('integration_runs')
+      .update(updates)
+      .eq('id', runId)
+
+    if (error) {
+      throw new Error(`Erro ao atualizar execução: ${error.message}`)
+    }
   }
 
   // Logs
-  static async getIntegrationLogs(
+  static async addLog(
+    integrationId: string,
+    runId: string | null,
+    level: 'info' | 'warning' | 'error',
+    message: string,
+    details?: Record<string, any>
+  ): Promise<void> {
+    const { error } = await supabase
+      .from('integration_logs')
+      .insert({
+        integration_id: integrationId,
+        run_id: runId,
+        level,
+        message,
+        details: details || null
+      })
+
+    if (error) {
+      console.error('Erro ao salvar log:', error)
+    }
+  }
+
+  static async getLogs(
     integrationId: string, 
     runId?: string, 
     limit = 100
@@ -273,5 +324,35 @@ export class IntegrationsAPI {
         total_records_processed: 0
       }
     }
+  }
+
+  // Métodos específicos para conectores
+  static async getIntegrationConnectors(integrationId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('integration_connectors')
+      .select('*')
+      .eq('integration_id', integrationId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      throw new Error(`Erro ao buscar conectores: ${error.message}`)
+    }
+
+    return data || []
+  }
+
+  static async hasActiveConnectors(integrationId: string): Promise<boolean> {
+    const { count, error } = await supabase
+      .from('integration_connectors')
+      .select('*', { count: 'exact', head: true })
+      .eq('integration_id', integrationId)
+      .eq('is_active', true)
+
+    if (error) {
+      console.error('Erro ao verificar conectores ativos:', error)
+      return false
+    }
+
+    return (count || 0) > 0
   }
 }

@@ -1,3 +1,4 @@
+// components/integrations/IntegrationCard.tsx
 "use client"
 
 import { useState } from "react"
@@ -21,7 +22,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { CreateConnectorModal } from "./CreateConnectorModal"
+import { ConnectorsAPI } from "@/lib/connectors-api"
 import { IntegrationWithStats } from "@/types/integrations"
+import { useToast } from "@/hooks/use-toast"
 import { 
   MoreHorizontal, 
   Play, 
@@ -34,9 +38,9 @@ import {
   XCircle,
   Calendar,
   Zap,
-  Database
+  Database,
+  Plus
 } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
 
 interface IntegrationCardProps {
   integration: IntegrationWithStats
@@ -46,6 +50,8 @@ interface IntegrationCardProps {
 
 export function IntegrationCard({ integration, onDelete, onToggle }: IntegrationCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showCreateConnectorModal, setShowCreateConnectorModal] = useState(false)
+  const [creatingConnector, setCreatingConnector] = useState(false)
   const { toast } = useToast()
 
   const getStatusBadge = (status: string) => {
@@ -95,64 +101,94 @@ export function IntegrationCard({ integration, onDelete, onToggle }: Integration
     navigator.clipboard.writeText(integration.webhook_url)
     toast({
       title: "Copiado!",
-      description: "URL do webhook copiada para a área de transferência"
+      description: "URL do Webhook copiada para a área de transferência"
     })
+  }
+
+  const handleCreateConnector = async (data: any) => {
+    try {
+      setCreatingConnector(true)
+      await ConnectorsAPI.createConnector(data)
+      setShowCreateConnectorModal(false)
+      toast({
+        title: "Sucesso",
+        description: "Conector criado com sucesso"
+      })
+    } catch (error) {
+      console.error('Erro ao criar conector:', error)
+      toast({
+        title: "Erro",
+        description: "Não foi possível criar o conector",
+        variant: "destructive"
+      })
+    } finally {
+      setCreatingConnector(false)
+    }
   }
 
   return (
     <>
-      <Card className="hover:shadow-lg transition-all duration-200 group hover:scale-[1.01]">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
+      <Card className="hover:shadow-md transition-shadow">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div className="space-y-1">
+            <CardTitle className="text-base font-medium flex items-center space-x-2">
               {getTypeIcon(integration.type)}
-              <span className="truncate">{integration.name}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              {getStatusBadge(integration.status)}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onToggle(integration.id, integration.status)}>
-                    {integration.status === 'active' ? (
-                      <>
-                        <Pause className="h-4 w-4 mr-2" />
-                        Desativar
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-4 w-4 mr-2" />
-                        Ativar
-                      </>
-                    )}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={copyApiKey}>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copiar API Key
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={copyWebhookUrl}>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copiar Webhook URL
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem 
-                    onClick={() => setShowDeleteDialog(true)}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Excluir
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </CardTitle>
-          <CardDescription className="truncate">
-            {integration.description || 'Sem descrição'}
-          </CardDescription>
+              <span>{integration.name}</span>
+            </CardTitle>
+            {integration.description && (
+              <CardDescription className="text-sm">
+                {integration.description}
+              </CardDescription>
+            )}
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            {getStatusBadge(integration.status)}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setShowCreateConnectorModal(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Criar Conector
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={copyApiKey}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copiar API Key
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={copyWebhookUrl}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copiar Webhook URL
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onToggle(integration.id, integration.status)}>
+                  {integration.status === 'active' ? (
+                    <>
+                      <Pause className="h-4 w-4 mr-2" />
+                      Desativar
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Ativar
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={() => setShowDeleteDialog(true)}
+                  className="text-red-600 focus:text-red-600"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-4">
@@ -236,6 +272,14 @@ export function IntegrationCard({ integration, onDelete, onToggle }: Integration
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CreateConnectorModal
+        isOpen={showCreateConnectorModal}
+        onClose={() => setShowCreateConnectorModal(false)}
+        onConfirm={handleCreateConnector}
+        loading={creatingConnector}
+        integration={integration}
+      />
     </>
   )
 }

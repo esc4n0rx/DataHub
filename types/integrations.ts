@@ -1,3 +1,4 @@
+// types/integrations.ts
 import { ReactNode } from "react"
 
 // types/integrations.ts
@@ -43,6 +44,8 @@ export interface Integration {
     preserve_schema: boolean
     backup_previous: boolean
   } | null
+  // Campos para conectores
+  connectors_count?: number
 }
 
 export interface IntegrationWithStats extends Integration {
